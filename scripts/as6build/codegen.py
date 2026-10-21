@@ -105,7 +105,8 @@ def export_pcode(armv7, work, ghidra, jdk, log):
 
 
 def canonical(value):
-    return (json.dumps(value, sort_keys=True, ensure_ascii=True, separators=(',', ':')) + '\n').encode()
+    # Same form the reference build hashed records with (no trailing newline).
+    return json.dumps(value, sort_keys=True, separators=(',', ':')).encode()
 
 
 def record_key(record):
@@ -182,6 +183,34 @@ def promote_modules(source, target, log):
     subprocess.run([sys.executable, '-I', str(HERE / 'promote.py'), str(source), str(target)], check=True)
 
 
+def export_fragments(stream, work, ghidra, jdk, log):
+    """Run each fragment exporter against the analyzed project."""
+    out = work / 'fragments'
+    out.mkdir(parents=True, exist_ok=True)
+    template = work / 'recovered/layout-template.json'
+    for folder in sorted((PIPELINE / 'fragments').iterdir()):
+        target = out / (folder.name + '.json')
+        if target.is_file():
+            continue
+        script = next(folder.glob('Export*.java')).name
+        arguments = [target, work / 'pcode/Asphalt6.armv7', folder / 'addresses.txt', template]
+        if (folder / 'discovery.json').is_file():
+            arguments.append(folder / 'discovery.json')
+        headless(ghidra, jdk, work / 'pcode/project', folder, script, arguments, out)
+    log('codegen: fragment code exported')
+    return out
+
+
+def lower_fragments(exports, target, work, log):
+    expected = json.loads((HERE / 'data/fragments-sha256.json').read_text())
+    subprocess.run([str(lowering_python(log)), '-I', str(HERE / 'fragments.py'), str(exports), str(target),
+                    str(work / 'fragment-tools')], check=True, stdout=subprocess.DEVNULL)
+    wrong = sorted(n for n, h in expected.items() if not (target / n).is_file() or sha256(target / n) != h)
+    if wrong:
+        raise SystemExit('fragment modules differ from the reference: %s' % ', '.join(wrong[:5]))
+    log('codegen: %d fragment modules verified' % len(expected))
+
+
 def hook_modules(reference, target, log):
     """Copies of translated modules with the layer's boundary hooks added."""
     target.mkdir(parents=True, exist_ok=True)
@@ -212,4 +241,5 @@ def generate(armv7, app, generated, work, ghidra=None, jdk=None, promote=True, l
             shutil.rmtree(generated / 'aot')
         shutil.copytree(reference, generated / 'aot')
     hook_modules(reference, generated / 'host', log)
+    lower_fragments(export_fragments(stream, work, ghidra, jdk, log), generated / 'host', work, log)
     raise SystemExit('codegen: lowering stages are not automated yet (see README, "Status")')

@@ -84,23 +84,18 @@ def merged(stream, supplemental):
         current = next(records, None)
 
 
-def load_lifter():
+def load_lifter(directory=LOWER):
     sys.dont_write_bytecode = True
-    spec = importlib.util.spec_from_file_location('as6_lift', LOWER / 'lift.py')
+    spec = importlib.util.spec_from_file_location('as6_lift_' + Path(directory).name.replace('-', '_'),
+                                                  Path(directory) / 'lift.py')
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
 
 
-def generate(stream, image, supplemental, output, log=print):
-    """Write output/native_NNNNN.cpp and output/program.cpp; return module list."""
-    lift = load_lifter()
-    image = Path(image).read_bytes()
-    supplemental = sorted(supplemental, key=record_key)
-    output.mkdir(parents=True, exist_ok=True)
+def module_generator(lift):
+    """Generator subclass that writes one self-contained module source."""
     shared = {'fp': None, 'atomic': None}
-    modules = []
-    header = None
 
     class ModuleGenerator(lift.Generator):
         def module(self, records, name):
@@ -134,6 +129,20 @@ def generate(stream, image, supplemental, output, log=print):
             self.emit('  while(lo<hi){const auto mid=lo+(hi-lo)/2;if(entries[mid].key<key)lo=mid+1;else hi=mid;}')
             self.emit('  return lo<sizeof(entries)/sizeof(entries[0])&&entries[lo].key==key?entries[lo].function:nullptr; }')
             return '\n'.join(self.lines) + '\n', keys
+
+    return ModuleGenerator
+
+
+def generate(stream, image, supplemental, output, log=print):
+    """Write output/native_NNNNN.cpp and output/program.cpp; return module list."""
+    lift = load_lifter()
+    image = Path(image).read_bytes()
+    supplemental = sorted(supplemental, key=record_key)
+    output.mkdir(parents=True, exist_ok=True)
+    modules = []
+    header = None
+
+    ModuleGenerator = module_generator(lift)
 
     def document(records, name):
         result = dict(header)
