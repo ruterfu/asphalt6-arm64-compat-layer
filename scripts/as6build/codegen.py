@@ -13,9 +13,13 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
+ROOT = HERE.parents[1]
+VENV = ROOT / 'build/venv'
+CAPSTONE = 'capstone==5.0.7'
 PIPELINE = HERE / 'pipeline'
 # SHA-256 of the normalized, uncompressed stream (see normalize_stream).
 STREAM_SHA256 = '815d958ced17e73334c0f470e53322ddb65f942cb6efefc0021ad1096782610d'
@@ -125,6 +129,7 @@ def recover_supplemental(stream, work, ghidra, jdk, log):
     template.write_text(json.dumps(dict({k: header[k] for k in LAYOUT_FIELDS}, schema_version=1,
                                         image_path=str(work / 'pcode/Asphalt6.armv7'), functions=[])))
     records = []
+    paths = []
     for script, addresses, count, digest in RECOVERIES:
         target = out / (script[:-5] + '.json')
         if not target.is_file():
@@ -135,12 +140,76 @@ def recover_supplemental(stream, work, ghidra, jdk, log):
         if len(found) != count or hashlib.sha256(canonical(found)).hexdigest() != digest:
             raise SystemExit('recovered code differs from the supported analysis: ' + script)
         records += found
+        paths.append(target)
     log('codegen: %d supplemental instructions verified' % len(records))
-    return records
+    return paths
 
 
-def generate(armv7, app, generated, work, ghidra=None, jdk=None, log=print):
+def lowering_python(log):
+    """Python with the pinned capstone the lowering planners require."""
+    python = VENV / 'bin/python'
+    probe = [str(python), '-c', 'import capstone,sys;sys.exit(capstone.__version__!="5.0.7")']
+    if python.is_file() and subprocess.run(probe).returncode == 0:
+        return python
+    log('codegen: preparing %s in %s' % (CAPSTONE, VENV))
+    subprocess.run([sys.executable, '-m', 'venv', str(VENV)], check=True)
+    subprocess.run([str(python), '-m', 'pip', 'install', '-q', CAPSTONE], check=True)
+    return python
+
+
+def lower_stream(stream, armv7, supplemental, output, log):
+    expected = json.loads((HERE / 'data/aot-sha256.json').read_text())
+    if output.is_dir() and {p.name for p in output.glob('*.cpp')} == set(expected) and \
+            all(sha256(output / n) == h for n, h in expected.items()):
+        log('codegen: translated modules cached')
+        return
+    if output.exists():
+        shutil.rmtree(output)
+    log('codegen: translating the program (about 10 minutes)')
+    subprocess.run([str(lowering_python(log)), '-I', str(HERE / 'lower.py'), str(stream), str(armv7),
+                    ','.join(str(p) for p in supplemental), str(output)], check=True)
+    wrong = sorted(n for n, h in expected.items() if not (output / n).is_file() or sha256(output / n) != h)
+    if wrong or len(list(output.glob('*.cpp'))) != len(expected):
+        raise SystemExit('translated modules differ from the reference: %s' % ', '.join(wrong[:5]))
+    log('codegen: %d translated modules verified' % len(expected))
+
+
+def promote_modules(source, target, log):
+    """Block-structured register promotion (keeps each original as fallback)."""
+    if target.exists():
+        shutil.rmtree(target)
+    log('codegen: register promotion')
+    subprocess.run([sys.executable, '-I', str(HERE / 'promote.py'), str(source), str(target)], check=True)
+
+
+def hook_modules(reference, target, log):
+    """Copies of translated modules with the layer's boundary hooks added."""
+    target.mkdir(parents=True, exist_ok=True)
+    for spec in json.loads((HERE / 'data/module-hooks.json').read_text()):
+        source = (reference / spec['module']).read_text()
+        if hashlib.sha256(source.encode()).hexdigest() != spec['source_sha256']:
+            raise SystemExit('hooked module source differs: ' + spec['module'])
+        lines = source.split('\n')
+        for start, end, replacement in reversed(spec['edits']):
+            lines[start:end] = replacement
+        text = '\n'.join(lines)
+        if hashlib.sha256(text.encode()).hexdigest() != spec['sha256']:
+            raise SystemExit('hooked module differs: ' + spec['output'])
+        (target / spec['output']).write_text(text)
+    log('codegen: hooked modules written')
+
+
+def generate(armv7, app, generated, work, ghidra=None, jdk=None, promote=True, log=print):
     ghidra, jdk = locate_tools(ghidra, jdk)
     stream = export_pcode(armv7, work, ghidra, jdk, log)
     supplemental = recover_supplemental(stream, work, ghidra, jdk, log)
+    reference = work / 'aot'
+    lower_stream(stream, armv7, supplemental, reference, log)
+    if promote:
+        promote_modules(reference, generated / 'aot', log)
+    else:
+        if (generated / 'aot').exists():
+            shutil.rmtree(generated / 'aot')
+        shutil.copytree(reference, generated / 'aot')
+    hook_modules(reference, generated / 'host', log)
     raise SystemExit('codegen: lowering stages are not automated yet (see README, "Status")')

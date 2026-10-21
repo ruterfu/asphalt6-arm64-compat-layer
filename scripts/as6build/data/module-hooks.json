@@ -1,0 +1,401 @@
+[
+ {
+  "output": "NativeSceneShard02317.cpp",
+  "module": "native_02317.cpp",
+  "source_sha256": "6156c50f4afffed123bd6f47ad4990a2137d91ca8e2b1bdef2c43690ef8c83f8",
+  "edits": [
+   [
+    1,
+    2,
+    [
+     "#include \"native_program.hpp\"",
+     "#include \"NativeSceneBoundary.hpp\""
+    ]
+   ],
+   [
+    2306,
+    2306,
+    [
+     "    if (!legacy && as6_scene_boundary::tryDirect(ctx,stop_pc,stop_thumb)) return Dispatch;"
+    ]
+   ],
+   [
+    14984,
+    14985,
+    [
+     "extern \"C\" as6aot::NativeFunction as6_native_scene_lookup_02317(std::uint32_t pc,bool thumb) {"
+    ]
+   ]
+  ],
+  "sha256": "18d77bbd60f91c94779947209c79271c5ad7b6da32d596989dd409c5a61025e4"
+ },
+ {
+  "output": "NativeMusicShard00409.cpp",
+  "module": "native_00409.cpp",
+  "source_sha256": "8fbf6c0b3480fb17dee9583a86466c2b74628579a36fa0cd5d111fcfc8e06f68",
+  "edits": [
+   [
+    1,
+    2,
+    [
+     "#include \"native_program.hpp\"",
+     "#include \"NativeMusicBoundary.hpp\""
+    ]
+   ],
+   [
+    9756,
+    9756,
+    [
+     "    if (as6_music_boundary::shouldSuspend(ctx,0xdf498u)) return UnresolvedTarget;"
+    ]
+   ],
+   [
+    11311,
+    11311,
+    [
+     "    if (as6_music_boundary::shouldSuspend(ctx,0xdf53cu)) return UnresolvedTarget;"
+    ]
+   ],
+   [
+    15628,
+    15629,
+    [
+     "extern \"C\" as6aot::NativeFunction as6_native_music_lookup_00409(std::uint32_t pc,bool thumb) {"
+    ]
+   ]
+  ],
+  "sha256": "eb80b9bb2b6e259446674afcd9928f026090966c559e7bff95299d1ab8006827"
+ },
+ {
+  "output": "NativeMusicShard00410.cpp",
+  "module": "native_00410.cpp",
+  "source_sha256": "f0a5404cce5d1f05947da7700ef6a370f64d4751115e9d87f9463de29ee709e3",
+  "edits": [
+   [
+    1,
+    2,
+    [
+     "#include \"native_program.hpp\"",
+     "#include \"NativeMusicBoundary.hpp\""
+    ]
+   ],
+   [
+    5684,
+    5684,
+    [
+     "    if (as6_music_boundary::shouldSuspend(ctx,0xdfa68u)) return UnresolvedTarget;"
+    ]
+   ],
+   [
+    6053,
+    6053,
+    [
+     "    if (as6_music_boundary::shouldSuspend(ctx,0xdfa88u)) return UnresolvedTarget;"
+    ]
+   ],
+   [
+    6292,
+    6292,
+    [
+     "    if (as6_music_boundary::shouldSuspend(ctx,0xdfaa0u)) return UnresolvedTarget;"
+    ]
+   ],
+   [
+    16019,
+    16020,
+    [
+     "extern \"C\" as6aot::NativeFunction as6_native_music_lookup_00410(std::uint32_t pc,bool thumb) {"
+    ]
+   ]
+  ],
+  "sha256": "49fbe680d1d8dc8234c690b636d537263ed2d8850f5f036d48d69989e177e62a"
+ },
+ {
+  "output": "NativeMusicShard00411.cpp",
+  "module": "native_00411.cpp",
+  "source_sha256": "cfc0612c6476301303d099997befbc020a089a4bb2bad92baae8f921c34c6af4",
+  "edits": [
+   [
+    1,
+    2,
+    [
+     "#include \"native_program.hpp\"",
+     "#include \"NativeMusicBoundary.hpp\""
+    ]
+   ],
+   [
+    2398,
+    2398,
+    [
+     "    if (as6_music_boundary::shouldSuspend(ctx,0xe00b8u)) return UnresolvedTarget;"
+    ]
+   ],
+   [
+    3389,
+    3389,
+    [
+     "    if (as6_music_boundary::shouldSuspend(ctx,0xe0108u)) return UnresolvedTarget;"
+    ]
+   ],
+   [
+    17120,
+    17121,
+    [
+     "extern \"C\" as6aot::NativeFunction as6_native_music_lookup_00411(std::uint32_t pc,bool thumb) {"
+    ]
+   ]
+  ],
+  "sha256": "9721f146cfbfb24bbccb5ca648ee200f2b2afb9318061f075d06909d7012db30"
+ },
+ {
+  "output": "NativeMusicShard00412.cpp",
+  "module": "native_00412.cpp",
+  "source_sha256": "8f0df635030e350b1c96f1dd90759f7a12769954bb5aba925f968f8736e45dd5",
+  "edits": [
+   [
+    1,
+    2,
+    [
+     "#include \"native_program.hpp\"",
+     "#include \"NativeMusicBoundary.hpp\""
+    ]
+   ],
+   [
+    2927,
+    2927,
+    [
+     "    if (as6_music_boundary::shouldSuspend(ctx,0xe0968u)) return UnresolvedTarget;"
+    ]
+   ],
+   [
+    17199,
+    17200,
+    [
+     "extern \"C\" as6aot::NativeFunction as6_native_music_lookup_00412(std::uint32_t pc,bool thumb) {"
+    ]
+   ]
+  ],
+  "sha256": "2ef04ce65785b9461c94c727fc8ceeeb842319638c3edbb68edce58d2e4ec407"
+ },
+ {
+  "output": "NativeMusicShard00415.cpp",
+  "module": "native_00415.cpp",
+  "source_sha256": "133c5f5a93a2afaed91b6cc2731837e2e63b6e1f812af71fe61d3b75b6d8bd17",
+  "edits": [
+   [
+    1,
+    2,
+    [
+     "#include \"native_program.hpp\"",
+     "#include \"NativeMusicBoundary.hpp\""
+    ]
+   ],
+   [
+    529,
+    529,
+    [
+     "    if (as6_music_boundary::shouldSuspend(ctx,0xe20e4u)) return UnresolvedTarget;"
+    ]
+   ],
+   [
+    6831,
+    6831,
+    [
+     "    if (as6_music_boundary::shouldSuspend(ctx,0xe241cu)) return UnresolvedTarget;"
+    ]
+   ],
+   [
+    8174,
+    8174,
+    [
+     "    if (as6_music_boundary::shouldSuspend(ctx,0xe24c4u)) return UnresolvedTarget;"
+    ]
+   ],
+   [
+    8717,
+    8717,
+    [
+     "    if (as6_music_boundary::shouldSuspend(ctx,0xe24fcu)) return UnresolvedTarget;"
+    ]
+   ],
+   [
+    9280,
+    9280,
+    [
+     "    if (as6_music_boundary::shouldSuspend(ctx,0xe253cu)) return UnresolvedTarget;"
+    ]
+   ],
+   [
+    10427,
+    10427,
+    [
+     "    if (as6_music_boundary::shouldSuspend(ctx,0xe25a4u)) return UnresolvedTarget;"
+    ]
+   ],
+   [
+    17771,
+    17772,
+    [
+     "extern \"C\" as6aot::NativeFunction as6_native_music_lookup_00415(std::uint32_t pc,bool thumb) {"
+    ]
+   ]
+  ],
+  "sha256": "227e4251ddc78c241d94576f0da6b3c7e62bfb5cdb268b33bf801da7d9e729d7"
+ },
+ {
+  "output": "NativeNavOriginal720.cpp",
+  "module": "native_00720.cpp",
+  "source_sha256": "b14fd770705d92a03f7553d99101807a8dcdde4ad168f8ef17afd213d6a5e8a0",
+  "edits": [
+   [
+    0,
+    0,
+    [
+     "#include \"NativeNavBoundary.hpp\""
+    ]
+   ],
+   [
+    16228,
+    16228,
+    [
+     "    if(as6_nav_boundary::shouldSuspend(ctx,stop_pc,stop_thumb)) return UnresolvedTarget;"
+    ]
+   ],
+   [
+    17579,
+    17580,
+    [
+     "extern \"C\" as6aot::NativeFunction as6_aot_lookup_native_00720_nav_prototype(std::uint32_t pc,bool thumb) {"
+    ]
+   ]
+  ],
+  "sha256": "6b8e5a1569057d847618ab2dd0bc781b7c62d955ea45c8c8cd2c88bfa3a0ca59"
+ },
+ {
+  "output": "NativeCopyShard01831.cpp",
+  "module": "native_01831.cpp",
+  "source_sha256": "0b838f39a5514e6983cd63f629ef5f1d475f668bfc939e563f13e39cab6116be",
+  "edits": [
+   [
+    1,
+    2,
+    [
+     "#include \"native_program.hpp\"",
+     "#include \"NativeCopyBoundary.hpp\""
+    ]
+   ],
+   [
+    11552,
+    11552,
+    [
+     "    if (!legacy && as6_copy_boundary::shouldSuspend(ctx,stop_pc,stop_thumb)) return UnresolvedTarget;"
+    ]
+   ],
+   [
+    15164,
+    15164,
+    [
+     "    if (!legacy && as6_copy_boundary::shouldSuspend(ctx,stop_pc,stop_thumb)) return UnresolvedTarget;"
+    ]
+   ],
+   [
+    16496,
+    16497,
+    [
+     "extern \"C\" as6aot::NativeFunction as6_native_copy_lookup_01831(std::uint32_t pc,bool thumb) {"
+    ]
+   ]
+  ],
+  "sha256": "4ed8ef1584c7550506cbfd9f1fbe11f0e02f53edc0d5ca33f6e3c2a24fcd9586"
+ },
+ {
+  "output": "NativeVertexShard02556.cpp",
+  "module": "native_02556.cpp",
+  "source_sha256": "d106673ee31747fa92faf1acb2f923ad1681f75f674a5620b23ec3d61afce4bd",
+  "edits": [
+   [
+    1,
+    2,
+    [
+     "#include \"native_program.hpp\"",
+     "#include \"NativeVertexBoundary.hpp\""
+    ]
+   ],
+   [
+    7897,
+    7897,
+    [
+     "    if (!legacy && as6_vertex_boundary::shouldSuspend(ctx,stop_pc,stop_thumb)) return UnresolvedTarget;"
+    ]
+   ],
+   [
+    14248,
+    14249,
+    [
+     "extern \"C\" as6aot::NativeFunction as6_native_vertex_lookup_02556(std::uint32_t pc,bool thumb) {"
+    ]
+   ]
+  ],
+  "sha256": "2e6b2fbdcef6fb5fdf685754da20e6821586b32bd4606197dc488914e3a191e8"
+ },
+ {
+  "output": "NativeUIWorkShard01501.cpp",
+  "module": "native_01501.cpp",
+  "source_sha256": "e78e3d4ab076510408ccfdf56337351e5f91b3177e651d3011706ffbfd93eeb1",
+  "edits": [
+   [
+    1,
+    2,
+    [
+     "#include \"native_program.hpp\"",
+     "#include \"NativeUIWorkBoundary.hpp\""
+    ]
+   ],
+   [
+    4899,
+    4899,
+    [
+     "    if (!legacy && as6_ui_work_boundary::tryDirect(ctx,stop_pc,stop_thumb)) return Dispatch;"
+    ]
+   ],
+   [
+    19757,
+    19758,
+    [
+     "extern \"C\" as6aot::NativeFunction as6_native_ui_work_lookup_01501(std::uint32_t pc,bool thumb) {"
+    ]
+   ]
+  ],
+  "sha256": "fe669d96bc9b0a3e90f163ee89f358582d5830d092c48860af3243915d3c26d3"
+ },
+ {
+  "output": "NativeCollisionInverseShard00808.cpp",
+  "module": "native_00808.cpp",
+  "source_sha256": "264d9328c29270a715e353a0cc518a9235529338ccbdaacba7cbeb3819e13997",
+  "edits": [
+   [
+    1,
+    2,
+    [
+     "#include \"native_program.hpp\"",
+     "#include \"NativeCollisionInverseBoundary.hpp\""
+    ]
+   ],
+   [
+    6952,
+    6952,
+    [
+     "    if (!legacy && as6_collision_inverse_boundary::tryDirect(ctx,stop_pc,stop_thumb)) return Dispatch;"
+    ]
+   ],
+   [
+    11770,
+    11771,
+    [
+     "extern \"C\" as6aot::NativeFunction as6_native_collision_inverse_lookup_00808(std::uint32_t pc,bool thumb) {"
+    ]
+   ]
+  ],
+  "sha256": "128c21f6208ea5acb5d9984ddd8d04a61633dc2355bd4f3377ea65d2e219fd94"
+ }
+]

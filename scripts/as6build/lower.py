@@ -198,10 +198,11 @@ def write_program(output, modules, register_size, pc_offset):
 
 
 if __name__ == '__main__':
-    # python lower.py STREAM IMAGE SUPPLEMENTAL.json[,LANDINGPAD.json] OUTPUT
+    # python lower.py STREAM IMAGE SUPPLEMENTAL.json[,MORE.json] OUTPUT
+    # Each JSON is a recovery document ({"functions": [{"instructions": [...]}]}).
     stream, image, inputs, output = sys.argv[1:5]
     extra = []
     for path in inputs.split(','):
         document = json.loads(Path(path).read_text())
         extra += [i for f in document['functions'] for i in f['instructions']]
-    generate(Path(stream), Path(image), extra, Path(output))
+    generate(Path(stream), Path(image), extra, Path(output), log=lambda m: print('[buildGame] ' + m, flush=True))

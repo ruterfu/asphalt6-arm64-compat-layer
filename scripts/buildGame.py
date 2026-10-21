@@ -99,6 +99,8 @@ def main():
     parser.add_argument('--profile', type=Path, help='provisioning profile matching --identity')
     parser.add_argument('--ghidra', type=Path, help='Ghidra 12.1.4 install (downloaded if omitted)')
     parser.add_argument('--jdk', type=Path, help='JDK 21 home (downloaded if omitted)')
+    parser.add_argument('--no-promote', action='store_true',
+                        help='compile the translated modules without block-structured register promotion')
     parser.add_argument('--skip-compile', action='store_true', help='stop after generating sources')
     args = parser.parse_args()
     if bool(args.identity) != bool(args.profile):
@@ -108,7 +110,8 @@ def main():
     app, armv7 = extract(args.ipa.resolve(), args.work)
     data = resources.build(app, args.work / 'Asphalt6Data', log)
     generated = ROOT / 'generated'
-    codegen.generate(armv7, app, generated, args.work, ghidra=args.ghidra, jdk=args.jdk, log=log)
+    codegen.generate(armv7, app, generated, args.work, ghidra=args.ghidra, jdk=args.jdk,
+                     promote=not args.no_promote, log=log)
     if args.skip_compile:
         return
     build = ROOT / 'build/ios'
