@@ -25,7 +25,25 @@
 | Python | 3.9 及以上 |
 | Ghidra | 12.1.4（构建时用于分析游戏程序） |
 | JDK | 21 |
-| 游戏 IPA | **仅支持 Asphalt 6 1.3.2**（构建脚本会校验其中的程序；1.3.8 等其他版本不受支持） |
+| 游戏 IPA | **仅支持 Asphalt 6 1.3.2**（构建脚本会校验其中的程序；1.3.8 等其他版本不受支持），校验值见下 |
+
+### 支持的游戏版本
+
+| 项目 | 值 |
+| --- | --- |
+| 版本 | 1.3.2（`CFBundleVersion`） |
+| 已验证的 IPA 文件 | `Asphalt_6__Adrenaline_1.3.2_ios_3.1.3.ipa`，564,685,789 字节 |
+| IPA 的 SHA-256 | `30ea95d5ccd3fb9ded3b7b6b0c9e88f6af8de62d8c841ed0a3f79be6d045a796` |
+| 游戏程序 ARMv7 部分的 SHA-256 | `4a2209881ab5933113a15770b0615807cfa7d73bf50a9326569a7ed20f77df00` |
+
+构建脚本以**游戏程序 ARMv7 部分**的哈希为准：重新打包过的 IPA，文件哈希可能和上表不同，但只要其中的游戏程序一致，就可以使用。自行核对：
+
+```sh
+shasum -a 256 Asphalt6.ipa                                   # IPA 文件
+unzip -p Asphalt6.ipa Payload/Asphalt6.app/Asphalt6 > Asphalt6.fat
+lipo -thin armv7 Asphalt6.fat -output Asphalt6.armv7
+shasum -a 256 Asphalt6.armv7                                 # 游戏程序 ARMv7 部分
+```
 
 ## 构建
 
