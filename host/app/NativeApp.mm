@@ -5,6 +5,7 @@ extern "C" BOOL GuestConfigurePNGProgressFile(GuestVM *,const char *);
 #import "HLE.h"
 #import "ResourcePaths.h"
 #import "HDArtworkPack.hpp"
+#import "ResourceArchives.hpp"
 #include "NativeBuildConfig.hpp"
 #include "ProcessArguments.hpp"
 #include "NativeMusicService.hpp"
@@ -241,32 +242,52 @@ static BOOL BootNativeGame(void) {
 }
 - (void)retryResources {[self checkResources:YES];}
 - (void)checkResources:(BOOL)force {
-    if(self.checking||self.bootAttempted)return;self.checking=YES;self.retry.hidden=YES;self.retry.enabled=NO;self.status.text=@"正在检查资源";runStage=@"checking-resources";SaveRunState();
+    if(self.checking||self.bootAttempted)return;self.checking=YES;self.retry.hidden=YES;self.retry.enabled=NO;self.status.text=@"正在验证游戏资源";runStage=@"checking-resources";SaveRunState();
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY,0),^{@autoreleasepool{
-        NSError *error=nil;NSDictionary *details=nil;BOOL ready=NO;
-        @try {ready=AS6ValidateDocumentResources(force,&details,&error);}
-        @catch(NSException *){error=[NSError errorWithDomain:@"AS6Resources" code:2 userInfo:@{NSLocalizedDescriptionKey:@"资源暂时无法读取，请确认资源包已完整解压后，再重新检测。"}];}
+        void (^show)(NSString *)=^(NSString *text){dispatch_async(dispatch_get_main_queue(),^{self.status.text=text;});};
+        NSError *error=nil;BOOL ready=NO,fullHash=force,installedData=NO,damagedData=NO,triedArtwork=NO;NSString *artworkNotice=nil;
+        // Verify Documents/Asphalt6Data. A failed check may be repaired once
+        // from Asphalt6Data.zip; a passing one may then install missing HD
+        // artwork once from NativeArtwork.zip. Every install is re-verified.
+        for(;;) {
+            show(@"正在验证游戏资源");
+            error=nil;NSDictionary *details=nil;
+            @try {ready=AS6ValidateDocumentResources(fullHash,&details,&error);}
+            @catch(NSException *){ready=NO;error=nil;}
+            if(!ready) {
+                if(!installedData&&AS6ResourceArchivePresent()) {
+                    show(@"正在解压资源包");
+                    if(AS6InstallResourceArchive()==AS6ArchiveInstalled){installedData=YES;fullHash=YES;continue;}
+                    damagedData=YES;
+                }
+                break;
+            }
+            if(!triedArtwork&&!AS6HDArtworkComplete()&&AS6HDArtworkArchivePresent()) {
+                triedArtwork=YES;
+                show(@"正在解压高清背景包");
+                if(AS6InstallHDArtwork())continue;
+                artworkNotice=@"高清背景包 NativeArtwork.zip 解压失败";
+            }
+            break;
+        }
         if(ready) {
             NSString *archive=[AS6ResourceRootPath() stringByAppendingPathComponent:@"data/file00a.bin"];
             ready=archive && as6::audio::configureNativeMusic(archive.fileSystemRepresentation);
             if(!ready)error=[NSError errorWithDomain:@"AS6Resources" code:3 userInfo:
                 @{NSLocalizedDescriptionKey:@"音乐资源暂时无法读取，请确认资源包完整后重试。"}];
         }
-        // Optional HD backgrounds: unpack Documents/NativeArtwork.zip before the
-        // original starts; without it the original backgrounds are used.
-        if(ready && AS6HDArtworkNeedsInstall()) {
-            dispatch_async(dispatch_get_main_queue(),^{self.status.text=@"正在准备高清背景";});
-            AS6InstallHDArtwork();
-        }
         dispatch_async(dispatch_get_main_queue(),^{
             self.checking=NO;
             if(!ready){
                 runStage=@"waiting-for-resources";runFailure=error.localizedDescription;SaveRunState();
-                NSString *reason=error.localizedDescription?:@"尚未找到完整的游戏资源。";
-                self.status.text=[NSString stringWithFormat:@"%@\n\n导入路径：文件 App → 我的 iPhone → Asphalt 6 → Asphalt6Data\n请先解压资源包，放入完整文件夹，返回后点击“重新检测”。",reason];
+                NSString *reason=damagedData?@"资源包 Asphalt6Data.zip 损坏，请先导入新资源包。":
+                    installedData?@"资源包 Asphalt6Data.zip 内容不完整或版本不符，请先导入新资源包。":@"请先导入游戏资源。";
+                NSString *app=NSBundle.mainBundle.infoDictionary[@"CFBundleDisplayName"]?:@"本应用";
+                self.status.text=[NSString stringWithFormat:@"%@\n\n把 Asphalt6Data.zip 放入：文件 App → 我的 iPhone → %@\n返回后点击“重新检测”。",reason,app];
                 self.retry.hidden=NO;self.retry.enabled=YES;return;
             }
-            self.bootAttempted=YES;self.status.text=@"正在启动游戏";runFailure=nil;AS6ResourceMarkGameStarted();
+            self.bootAttempted=YES;runFailure=nil;AS6ResourceMarkGameStarted();
+            self.status.text=artworkNotice?[artworkNotice stringByAppendingString:@"\n正在启动游戏"]:@"正在启动游戏";
             // Let UIKit paint the single startup message before original boot
             // synchronously enters its potentially long initialization.
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW,100*NSEC_PER_MSEC),dispatch_get_main_queue(),^{

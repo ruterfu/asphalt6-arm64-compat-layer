@@ -10,7 +10,7 @@ Stages (each verified against pinned hashes before the next one runs):
   4. compile   build the iOS libraries with CMake
   5. package   link, sign (ad-hoc unless --identity/--profile) and write the IPA
 
-Outputs land in dist/: Asphalt6Compat.ipa and Asphalt6Data.zip.
+Outputs land in dist/: Asphalt6ARM64.ipa and Asphalt6Data.zip.
 """
 import argparse
 import hashlib
@@ -80,7 +80,8 @@ def compile_ios(generated, build, jobs):
 
 
 def zip_resources(folder, target):
-    with zipfile.ZipFile(target, 'w', zipfile.ZIP_STORED) as archive:
+    # Entries sit under Asphalt6Data/; the app unpacks it on first launch.
+    with zipfile.ZipFile(target, 'w', zipfile.ZIP_DEFLATED, compresslevel=6) as archive:
         for path in sorted(folder.rglob('*')):
             if path.is_file():
                 archive.write(path, path.relative_to(folder.parent))
@@ -114,7 +115,7 @@ def main():
     compile_ios(generated, build, args.jobs)
     package.package(build, app, data, args.dist, args.bundle_id, args.identity, args.profile, log)
     zip_resources(args.work / 'Asphalt6Data', args.dist / 'Asphalt6Data.zip')
-    log('done: install dist/Asphalt6Compat.ipa, then copy Asphalt6Data into the app\'s Documents folder')
+    log('done: install dist/Asphalt6ARM64.ipa, then copy dist/Asphalt6Data.zip into the app\'s Documents folder')
 
 
 if __name__ == '__main__':

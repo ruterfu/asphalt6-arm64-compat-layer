@@ -35,7 +35,7 @@ def info_plist(game_app, bundle_id):
         'CFBundleIdentifier': bundle_id,
         'CFBundleIconFiles': original.get('CFBundleIconFiles', []),
         'CFBundleInfoDictionaryVersion': '6.0',
-        'CFBundleName': 'Asphalt6Compat',
+        'CFBundleName': 'Asphalt6ARM64',
         'CFBundlePackageType': 'APPL',
         'CFBundleShortVersionString': '1.0',
         'CFBundleSupportedPlatforms': ['iPhoneOS'],
@@ -91,7 +91,7 @@ def package(build, game_app, manifest, dist, bundle_id=DEFAULT_BUNDLE_ID, identi
     staging = build / 'Payload'
     if staging.exists():
         shutil.rmtree(staging)
-    app = staging / 'Asphalt6Compat.app'
+    app = staging / 'Asphalt6ARM64.app'
     app.mkdir(parents=True)
     link(build, app / EXECUTABLE)
     if identity and profile:
@@ -112,7 +112,7 @@ def package(build, game_app, manifest, dist, bundle_id=DEFAULT_BUNDLE_ID, identi
     sign(app, build, identity, profile)
 
     dist.mkdir(parents=True, exist_ok=True)
-    ipa = dist / 'Asphalt6Compat.ipa'
+    ipa = dist / 'Asphalt6ARM64.ipa'
     with zipfile.ZipFile(ipa, 'w', zipfile.ZIP_DEFLATED) as archive:
         for path in sorted(staging.rglob('*')):
             if path.is_file() or path.is_symlink():

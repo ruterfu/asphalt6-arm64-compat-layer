@@ -64,8 +64,8 @@ python3 scripts/buildGame.py /path/to/Asphalt6.ipa \
 
 产物位于 `dist/`：
 
-- `Asphalt6Compat.ipa`：默认为临时签名（ad-hoc），可直接交给 SideStore、AltStore 等工具安装；
-- `Asphalt6Data.zip`：游戏资源。
+- `Asphalt6ARM64.ipa`：可安装到手机的 App，默认为临时签名（ad-hoc），可直接交给 SideStore、AltStore 等工具安装；
+- `Asphalt6Data.zip`：游戏资源包。
 
 如果要用自己的开发者证书直接签名：
 
@@ -75,17 +75,32 @@ python3 scripts/buildGame.py Asphalt6.ipa --identity "Apple Development: …" --
 
 ## 安装
 
-1. 安装 `Asphalt6Compat.ipa`。
-2. 解压 `Asphalt6Data.zip`，在“文件”App 中把 `Asphalt6Data` 文件夹放进 **我的 iPhone → （App 名称，取自你的 IPA，通常为 Asphalt 6）**。
-3. 打开 App。首次启动会校验资源，之后启动会使用缓存。
+1. 安装 `Asphalt6ARM64.ipa`，并打开一次（会生成 App 的文稿目录和《资源导入说明》）。
+2. 在“文件”App 中，把 `Asphalt6Data.zip` 直接放进 **我的 iPhone → （App 名称，取自你的 IPA，通常为 Asphalt 6）**，无需解压。
+3. 可选：把高清背景包 `NativeArtwork.zip` 也放在同一目录。
+4. 打开 App，兼容层会自动完成解压和验证。
+
+### 启动时的资源处理
+
+| 情况 | 屏幕提示 | 处理 |
+| --- | --- | --- |
+| 每次启动 | 正在验证游戏资源 | 校验 `Asphalt6Data`（之后启动使用缓存，很快），并检查高清背景是否齐全 |
+| 资源缺失或损坏，且有 `Asphalt6Data.zip` | 正在解压资源包 | 删除旧的 `Asphalt6Data`，解压资源包，成功后删除资源包，再重新验证；已安装的高清背景会保留 |
+| 资源缺失，且没有资源包 | 请先导入游戏资源 | 导入资源包后点击“重新检测” |
+| 资源包损坏 | 资源包 Asphalt6Data.zip 损坏，请先导入新资源包 | 换一个资源包后点击“重新检测” |
+| 资源完整，高清背景不全，且有 `NativeArtwork.zip` | 正在解压高清背景包 | 补齐缺失的高清背景，成功后删除压缩包，再重新验证 |
+| 高清背景包损坏 | 高清背景包 NativeArtwork.zip 解压失败 | 照常启动游戏；压缩包保留，下次启动再次尝试 |
+| 资源完整 | 正在启动游戏 | 此时文稿目录中的压缩包会被忽略 |
 
 ## 高清背景包（可选）
 
-把 `NativeArtwork.zip` 放进 App 的文稿目录（与 `Asphalt6Data` 同级）即可。启动时，在“正在启动游戏”阶段兼容层会自动：
+把 `NativeArtwork.zip` 放进 App 的文稿目录即可。启动时如果高清背景不齐全，兼容层会自动：
 
-1. 解压其中受支持的文件到 `Asphalt6Data/NativeArtwork/`；
+1. 解压缺失的文件到 `Asphalt6Data/NativeArtwork/`；
 2. 逐个校验 SHA-256，只使用校验通过的图片；
 3. 标题、菜单、加载等背景改为 16:9 高清版本。
+
+高清背景已齐全时，文稿目录中的 `NativeArtwork.zip` 会被忽略。
 
 没有这个压缩包、或其中某张图缺失或损坏时，对应画面自动使用游戏原版背景，不影响运行。
 

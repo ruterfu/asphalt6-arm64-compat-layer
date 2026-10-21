@@ -16,13 +16,13 @@ const std::uint8_t *LoadingHeader();
 
 #ifdef __OBJC__
 extern "C" {
-// YES when Documents/NativeArtwork.zip exists and some pack file still needs
-// to be installed, so the boot screen can say what it is doing.
-BOOL AS6HDArtworkNeedsInstall(void);
-// Installs every pack file from Documents/NativeArtwork.zip into
-// Asphalt6Data/NativeArtwork, verifying each against HDArtworkPins.hpp.
-// Missing zip, unknown entries or bad files are skipped; returns the number
-// of verified files now installed. Safe to call off the main thread.
-NSUInteger AS6InstallHDArtwork(void);
+// Every pack file is installed in Asphalt6Data/NativeArtwork and verified.
+// Missing files simply fall back to the original backgrounds.
+BOOL AS6HDArtworkComplete(void);
+BOOL AS6HDArtworkArchivePresent(void);
+// Installs the missing pack files from Documents/NativeArtwork.zip, each
+// verified against HDArtworkPins.hpp. Returns YES (and deletes the archive)
+// only when the pack is complete afterwards; otherwise the archive is kept.
+BOOL AS6InstallHDArtwork(void);
 }
 #endif
