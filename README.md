@@ -117,4 +117,4 @@ python3 scripts/buildGame.py Asphalt6.ipa --identity "Apple Development: …" --
 
 - 兼容层代码：见各文件。
 - `aot/math/vendor/`：Berkeley SoftFloat，许可见 `aot/math/NOTICE.md`。
-- 游戏程序、美术、音频及相关商标归其各自权利人所有，本仓库不包含也不分发这些内容。
+- 《狂野飙车 6》（Asphalt 6: Adrenaline）的游戏程序、美术、音频及相关商标归 Gameloft 所有，本仓库不包含也不分发这些内容。
