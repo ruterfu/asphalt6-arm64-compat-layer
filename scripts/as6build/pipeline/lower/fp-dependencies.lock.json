@@ -1,0 +1,18 @@
+{
+  "baseline_sha256": {
+    "lift.py": "17b82ef6e6c6b617e6affcd8dd4627875d0ce9c326e3fbfffeca960d15beb2db",
+    "runtime/aot_support.hpp": "eb07c27524303bb1c4fdd405a691cde496048683bb8b2f670e465fe730ca00d8"
+  },
+  "sample_export_sha256": "04407a99cdeab3046e24e7f9255c0a01d27c5051316bf11cbe0116290faae411",
+  "arm_float_dependency": {
+    "path": "/Users/fubo/FuboProject/Extract/tmp-as6/native-aot/candidates/arm-float-extended",
+    "sha256": {
+      "candidate-manifest.json": "173a49e4de7b09f609ab40499ec6ddf632619920b5de8d0061e112d4cabc086b",
+      "include/as6_arm_float.h": "44e7a1430061390ec14966d6e6c251aef6b1512a680672a23e69092e65b04bf7",
+      "build/host/libas6_arm_float.a": "fa804f382622f1823470f670a7c7178b0cf202b3237dd35595f271e62db7b842",
+      "build/device/libas6_arm_float.a": "d6a91b84bb758d7ecf9edfe3a9960adf85683f21e68ad087440d8be894585e7b",
+      "build/simulator/libas6_arm_float.a": "77482efecc350c460a47b809dfab20faff5abb02733888e6cf84396305eb0fd3"
+    }
+  },
+  "fp_registry_sha256": "bcda1581e47d3b62f7905456a0eed26333107aff14817d7b4c185e3a9e7392d0"
+}

@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "image_sha256": "4a2209881ab5933113a15770b0615807cfa7d73bf50a9326569a7ed20f77df00",
+  "registers_sha256": "a8e809104c7ee1b22d05f6072146dc742319e10ae97c17eb69a5b7f9fe77e624",
+  "canonical_fields": [
+    "address",
+    "size",
+    "bytes",
+    "source_file_offset",
+    "original_bytes_match",
+    "context",
+    "pcode",
+    "fallthrough",
+    "flows",
+    "mnemonic",
+    "asm",
+    "flow_type"
+  ],
+  "instructions": {
+    "0x2ff610:0": {
+      "canonical_sha256": "7cfdd9f6ad4874e8c999410b893451cf48deb65ed894ab03fd6d3f162342a251",
+      "kind": "original_undefined_instruction"
+    }
+  },
+  "scope": "Only exact original ARM AL UDF #0xfdee at 0x2ff610; no other trap encoding and no literal pool data"
+}

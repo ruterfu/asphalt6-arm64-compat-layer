@@ -73,8 +73,6 @@ python3 scripts/buildGame.py /path/to/Asphalt6.ipa \
 python3 scripts/buildGame.py Asphalt6.ipa --identity "Apple Development: …" --profile your.mobileprovision
 ```
 
-此时 bundle ID 取自描述文件；不签名时默认为 `com.ruterfu.asphalt6compat`（可用 `--bundle-id` 修改）。
-
 ## 安装
 
 1. 安装 `Asphalt6Compat.ipa`。

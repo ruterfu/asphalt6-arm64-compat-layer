@@ -20,6 +20,16 @@ PIPELINE = HERE / 'pipeline'
 # SHA-256 of the normalized, uncompressed stream (see normalize_stream).
 STREAM_SHA256 = '815d958ced17e73334c0f470e53322ddb65f942cb6efefc0021ad1096782610d'
 EXTERNAL_PLACEHOLDERS = 0x800000
+# Code the default listing leaves undisassembled: (exporter, address list,
+# expected record count, SHA-256 of the sorted canonical records).
+RECOVERIES = (
+    ('ExportTargetedInit.java', 'init-addresses.txt', 1270,
+     '9039ed936afe3e8908b98608ff6c9e716ec4a6329bc8de4b285ade7db6a502bd'),
+    ('ExportRecoveredLandingPad.java', 'landingpad-addresses.txt', 237,
+     'c90bc4aa0471cefde315ca71f055974756c8893332caf20f882034ab91958668'),
+)
+LAYOUT_FIELDS = ('image_sha256', 'program_name', 'lang', 'compiler', 'pcode_source', 'flow_overrides_included',
+                 'byte_order', 'address_spaces', 'registers', 'userops')
 GHIDRA_VERSION = '12.1.4'
 
 
@@ -90,7 +100,47 @@ def export_pcode(armv7, work, ghidra, jdk, log):
     return stream
 
 
+def canonical(value):
+    return (json.dumps(value, sort_keys=True, ensure_ascii=True, separators=(',', ':')) + '\n').encode()
+
+
+def record_key(record):
+    return (int(record['address'], 0) << 1) | int(record['context']['TMode'] == '0x1')
+
+
+def headless(ghidra, jdk, project, script_dir, script, arguments, log_dir):
+    env = dict(os.environ, JAVA_HOME=str(jdk), _JAVA_HOME=str(jdk), TMPDIR=str(log_dir))
+    subprocess.run([str(ghidra / 'support/analyzeHeadless'), str(project), 'as6', '-process', 'Asphalt6.armv7',
+                    '-readOnly', '-noanalysis', '-max-cpu', '1', '-scriptPath', str(script_dir), '-postScript', script,
+                    *[str(a) for a in arguments], '-log', str(log_dir / (script + '.log'))], env=env, check=True)
+
+
+def recover_supplemental(stream, work, ghidra, jdk, log):
+    """Export code the listing leaves undisassembled, from scratch fragments."""
+    out = work / 'recovered'
+    out.mkdir(parents=True, exist_ok=True)
+    with gzip.open(stream) as reader:
+        header = json.loads(reader.readline())
+    template = out / 'layout-template.json'
+    template.write_text(json.dumps(dict({k: header[k] for k in LAYOUT_FIELDS}, schema_version=1,
+                                        image_path=str(work / 'pcode/Asphalt6.armv7'), functions=[])))
+    records = []
+    for script, addresses, count, digest in RECOVERIES:
+        target = out / (script[:-5] + '.json')
+        if not target.is_file():
+            headless(ghidra, jdk, work / 'pcode/project', PIPELINE / 'recover', script,
+                     [target, work / 'pcode/Asphalt6.armv7', PIPELINE / 'recover' / addresses, template], out)
+        document = json.loads(target.read_text())
+        found = sorted((i for f in document['functions'] for i in f['instructions']), key=record_key)
+        if len(found) != count or hashlib.sha256(canonical(found)).hexdigest() != digest:
+            raise SystemExit('recovered code differs from the supported analysis: ' + script)
+        records += found
+    log('codegen: %d supplemental instructions verified' % len(records))
+    return records
+
+
 def generate(armv7, app, generated, work, ghidra=None, jdk=None, log=print):
     ghidra, jdk = locate_tools(ghidra, jdk)
-    export_pcode(armv7, work, ghidra, jdk, log)
+    stream = export_pcode(armv7, work, ghidra, jdk, log)
+    supplemental = recover_supplemental(stream, work, ghidra, jdk, log)
     raise SystemExit('codegen: lowering stages are not automated yet (see README, "Status")')
