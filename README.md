@@ -65,7 +65,7 @@ python3 scripts/buildGame.py /path/to/Asphalt6.ipa \
 
 产物位于 `dist/`：
 
-- `Asphalt6ARM64.ipa`：可安装到手机的 App，默认为临时签名（ad-hoc），可直接交给 SideStore、AltStore 等工具安装；
+- `Asphalt6ARM64.ipa`：可安装到手机的 App，默认不签名，用 SideStore、AltStore 等工具签名安装；
 - `Asphalt6Data.zip`：游戏资源包。
 
 常用选项：

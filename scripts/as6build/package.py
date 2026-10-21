@@ -75,8 +75,10 @@ def link(build, executable):
 
 def sign(app, build, identity, profile):
     if not identity:
-        # Ad-hoc: SideStore/AltStore and similar tools re-sign on install.
-        run(['codesign', '--force', '--sign', '-', '--timestamp=none', app])
+        # Unsigned: SideStore/AltStore and similar tools sign on install. The
+        # arm64 linker adds an ad-hoc signature by default; remove it.
+        run(['codesign', '--remove-signature', app / EXECUTABLE])
+        shutil.rmtree(app / '_CodeSignature', ignore_errors=True)
         return
     profile_plist = plistlib.loads(output(['security', 'cms', '-D', '-i', profile]).encode())
     entitlements = build / 'entitlements.plist'
@@ -117,5 +119,5 @@ def package(build, game_app, manifest, dist, bundle_id=DEFAULT_BUNDLE_ID, identi
         for path in sorted(staging.rglob('*')):
             if path.is_file() or path.is_symlink():
                 archive.write(path, path.relative_to(build))
-    log('package: %s (%s, bundle id %s)' % (ipa, 'signed' if identity else 'ad-hoc', bundle_id))
+    log('package: %s (%s, bundle id %s)' % (ipa, 'signed' if identity else 'unsigned', bundle_id))
     return ipa

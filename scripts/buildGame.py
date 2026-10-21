@@ -8,7 +8,7 @@ Stages (each verified against pinned hashes before the next one runs):
   2. resources assemble Asphalt6Data for the app's Documents folder
   3. codegen   translate the game program into C++ sources under generated/
   4. compile   build the iOS libraries with CMake
-  5. package   link, sign (ad-hoc unless --identity/--profile) and write the IPA
+  5. package   link and write the IPA (unsigned unless --identity/--profile)
 
 Outputs land in dist/: Asphalt6ARM64.ipa and Asphalt6Data.zip.
 """
