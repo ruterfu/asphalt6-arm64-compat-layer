@@ -1,0 +1,346 @@
+{
+  "program": "Asphalt6.armv7",
+  "language": "ARM:LE:32:v8",
+  "compiler_spec": "default",
+  "text_start": "0x2764",
+  "text_end_exclusive": "0x6a2920",
+  "text_bytes": 6947260,
+  "database_executable_sha256": "4a2209881ab5933113a15770b0615807cfa7d73bf50a9326569a7ed20f77df00",
+  "every_text_byte_matches_original_file": false,
+  "database_text_byte_mismatch_count": 803,
+  "database_text_byte_mismatch_samples": [
+    {
+      "address": "0x38fbbc",
+      "database_byte": 92,
+      "original_byte": 100
+    },
+    {
+      "address": "0x38fc80",
+      "database_byte": 92,
+      "original_byte": 100
+    },
+    {
+      "address": "0x39016c",
+      "database_byte": 92,
+      "original_byte": 100
+    },
+    {
+      "address": "0x3902dc",
+      "database_byte": 92,
+      "original_byte": 100
+    },
+    {
+      "address": "0x390430",
+      "database_byte": 92,
+      "original_byte": 100
+    },
+    {
+      "address": "0x3904d8",
+      "database_byte": 92,
+      "original_byte": 100
+    },
+    {
+      "address": "0x390558",
+      "database_byte": 92,
+      "original_byte": 100
+    },
+    {
+      "address": "0x39061c",
+      "database_byte": 92,
+      "original_byte": 100
+    },
+    {
+      "address": "0x3906d8",
+      "database_byte": 92,
+      "original_byte": 100
+    },
+    {
+      "address": "0x3bf650",
+      "database_byte": 92,
+      "original_byte": 100
+    },
+    {
+      "address": "0x3bf8ac",
+      "database_byte": 92,
+      "original_byte": 100
+    },
+    {
+      "address": "0x3c039c",
+      "database_byte": 92,
+      "original_byte": 100
+    },
+    {
+      "address": "0x3c0514",
+      "database_byte": 92,
+      "original_byte": 100
+    },
+    {
+      "address": "0x3c566c",
+      "database_byte": 92,
+      "original_byte": 100
+    },
+    {
+      "address": "0x3c5704",
+      "database_byte": 92,
+      "original_byte": 100
+    },
+    {
+      "address": "0x3c5788",
+      "database_byte": 92,
+      "original_byte": 100
+    },
+    {
+      "address": "0x3c5828",
+      "database_byte": 92,
+      "original_byte": 100
+    },
+    {
+      "address": "0x3c58c0",
+      "database_byte": 92,
+      "original_byte": 100
+    },
+    {
+      "address": "0x3c5960",
+      "database_byte": 92,
+      "original_byte": 100
+    },
+    {
+      "address": "0x3c59f8",
+      "database_byte": 92,
+      "original_byte": 100
+    },
+    {
+      "address": "0x3c5a98",
+      "database_byte": 92,
+      "original_byte": 100
+    },
+    {
+      "address": "0x3c78e8",
+      "database_byte": 192,
+      "original_byte": 204
+    },
+    {
+      "address": "0x3c89ac",
+      "database_byte": 92,
+      "original_byte": 100
+    },
+    {
+      "address": "0x3c8a38",
+      "database_byte": 92,
+      "original_byte": 100
+    },
+    {
+      "address": "0x3c8abc",
+      "database_byte": 92,
+      "original_byte": 100
+    },
+    {
+      "address": "0x3c9fc4",
+      "database_byte": 92,
+      "original_byte": 100
+    },
+    {
+      "address": "0x3ca2b4",
+      "database_byte": 92,
+      "original_byte": 100
+    },
+    {
+      "address": "0x3ca390",
+      "database_byte": 92,
+      "original_byte": 100
+    },
+    {
+      "address": "0x3ce6f4",
+      "database_byte": 92,
+      "original_byte": 100
+    },
+    {
+      "address": "0x3ceb18",
+      "database_byte": 92,
+      "original_byte": 100
+    },
+    {
+      "address": "0x3ceba4",
+      "database_byte": 92,
+      "original_byte": 100
+    },
+    {
+      "address": "0x3d2044",
+      "database_byte": 92,
+      "original_byte": 100
+    }
+  ],
+  "classification_bytes": {
+    "defined_data": 266041,
+    "defined_data_source_mismatch": 3204,
+    "instruction_arm": 6571552,
+    "undefined_gap": 106463
+  },
+  "instruction_counts": {
+    "instruction_arm": 1642888
+  },
+  "instruction_bytes": {
+    "instruction_arm": 6571552
+  },
+  "defined_data_items": 67147,
+  "defined_data_bytes": 269245,
+  "text_function_entries": 13532,
+  "function_body_ranges": 14418,
+  "pcode_instruction_queries": 1642888,
+  "pcode_empty_instruction_results": 0,
+  "pcode_failed_instruction_queries": 0,
+  "pcode_unimplemented_operations": 0,
+  "pcode_skipped_source_mismatch_instructions": 0,
+  "pcode_opcode_histogram": {
+    "BOOL_AND": 633214,
+    "BOOL_NEGATE": 149543,
+    "BOOL_OR": 321747,
+    "BOOL_XOR": 391,
+    "BRANCH": 40617,
+    "BRANCHIND": 1062,
+    "CALL": 86701,
+    "CALLIND": 18445,
+    "CALLOTHER": 88243,
+    "CBRANCH": 174596,
+    "COPY": 1228998,
+    "FLOAT2FLOAT": 1145,
+    "FLOAT_ABS": 309,
+    "FLOAT_ADD": 246,
+    "FLOAT_DIV": 2092,
+    "FLOAT_EQUAL": 6359,
+    "FLOAT_LESS": 6890,
+    "FLOAT_LESSEQUAL": 6359,
+    "FLOAT_MULT": 3244,
+    "FLOAT_NAN": 12718,
+    "FLOAT_NEG": 1030,
+    "FLOAT_SQRT": 474,
+    "FLOAT_SUB": 2586,
+    "INT_ADD": 959005,
+    "INT_AND": 157535,
+    "INT_CARRY": 152510,
+    "INT_EQUAL": 756884,
+    "INT_LEFT": 49893,
+    "INT_LESS": 44,
+    "INT_LESSEQUAL": 162621,
+    "INT_MULT": 8749,
+    "INT_NEGATE": 11252,
+    "INT_NOTEQUAL": 360115,
+    "INT_OR": 36586,
+    "INT_RIGHT": 370223,
+    "INT_SBORROW": 162665,
+    "INT_SCARRY": 152510,
+    "INT_SEXT": 6800,
+    "INT_SLESS": 436531,
+    "INT_SRIGHT": 6959,
+    "INT_SUB": 278286,
+    "INT_XOR": 628,
+    "INT_ZEXT": 50957,
+    "LOAD": 521556,
+    "RETURN": 19610,
+    "STORE": 375543,
+    "SUBPIECE": 404400,
+    "TRUNC": 1249
+  },
+  "pcode_callother_name_id_histogram": {
+    "13:coprocessor_storelong": 1,
+    "17:software_udf": 1,
+    "191:FloatVectorAdd": 12582,
+    "219:VectorSignedToFloat": 3411,
+    "220:VectorUnsignedToFloat": 831,
+    "263:FloatVectorMult": 19583,
+    "287:FloatVectorSub": 4102,
+    "37:hasExclusiveAccess": 2872,
+    "44:DataMemoryBarrier": 5744,
+    "62:setISAMode": 39116
+  },
+  "pcode_samples": {
+    "CALLOTHER 13:coprocessor_storelong": [
+      "0x4fbcfc"
+    ],
+    "CALLOTHER 17:software_udf": [
+      "0x2ff610"
+    ],
+    "CALLOTHER 191:FloatVectorAdd": [
+      "0x2292c",
+      "0x22a44",
+      "0x22c60",
+      "0x23670",
+      "0x238f4",
+      "0x3959c",
+      "0x395b8",
+      "0x3df88"
+    ],
+    "CALLOTHER 219:VectorSignedToFloat": [
+      "0x14a2c",
+      "0x14a48",
+      "0x14a5c",
+      "0x14a64",
+      "0x1cd48",
+      "0x1cdc8",
+      "0x1ec3c",
+      "0x1ec5c"
+    ],
+    "CALLOTHER 220:VectorUnsignedToFloat": [
+      "0x1d38c",
+      "0x1d3b0",
+      "0x1d3d0",
+      "0x1d3f0",
+      "0x1f24c",
+      "0x1f2f0",
+      "0x227d8",
+      "0x22884"
+    ],
+    "CALLOTHER 263:FloatVectorMult": [
+      "0x3ad8",
+      "0x3adc",
+      "0x3b1c",
+      "0x3b30",
+      "0x3d34",
+      "0x3d38",
+      "0x3d78",
+      "0x3d8c"
+    ],
+    "CALLOTHER 287:FloatVectorSub": [
+      "0x39578",
+      "0x395a4",
+      "0x3a974",
+      "0x3e8ac",
+      "0x3e8f8",
+      "0x3e904",
+      "0x4186c",
+      "0x41898"
+    ],
+    "CALLOTHER 37:hasExclusiveAccess": [
+      "0x6ddc",
+      "0x6e94",
+      "0x6f30",
+      "0x6f44",
+      "0x8924",
+      "0xd764",
+      "0xdf18",
+      "0xdfdc"
+    ],
+    "CALLOTHER 44:DataMemoryBarrier": [
+      "0x6da4",
+      "0x6de8",
+      "0x6e80",
+      "0x6ea0",
+      "0x6eb4",
+      "0x6ef8",
+      "0x6f3c",
+      "0x6f50"
+    ],
+    "CALLOTHER 62:setISAMode": [
+      "0x27b0",
+      "0x27c8",
+      "0x27dc",
+      "0x27f0",
+      "0x2804",
+      "0x2828",
+      "0x2850",
+      "0x2870"
+    ]
+  },
+  "pcode_lowerer_support": "Unknown here: histogram is original semantics inventory, not implemented lowerer coverage. CALLOTHER needs explicit handling.",
+  "limitations": "Frozen Ghidra classification, not a proof of all reachable code. Undefined gaps are unknown, not data. No reanalysis or emulation performed."
+}

@@ -1,0 +1,88 @@
+{
+  "inputs": [
+    {
+      "source": "qemu/fpu/softfloat.c",
+      "destination": "vendor/fpu/softfloat.c",
+      "sha256": "e6ac2a04ee9faf535a6bc2256a7c464b5edc316fade53b7a59971602163d53c1",
+      "output_sha256": "f48b773c2ee33529f34fc65967dc0f43b64e6cf7e71deacd76d9d35f8eae5651",
+      "edits": [
+        {
+          "before": "#include \"qemu/osdep.h\"",
+          "after": "#include \"as6_math_support.h\""
+        },
+        {
+          "before": "#include \"qemu/bitops.h\"",
+          "after": "/* Integer support is supplied by as6_math_support.h. */"
+        },
+        {
+          "before": "float64 float32_to_float64(float32 a, float_status *s)\n{",
+          "after": "float64 float32_to_float64(float32 a, float_status *s)\n{\n    if (QEMU_NO_HARDFLOAT) return soft_float32_to_float64(a, s);"
+        },
+        {
+          "before": "#if defined(TARGET_PPC) || defined(__FAST_MATH__)\n# if defined(__FAST_MATH__)\n#  warning disabling hardfloat due to -ffast-math: hardfloat requires an exact \\\n    IEEE implementation\n# endif\n# define QEMU_NO_HARDFLOAT 1\n# define QEMU_SOFTFLOAT_ATTR QEMU_FLATTEN\n#elif !defined(_MSC_VER)\n# define QEMU_NO_HARDFLOAT 0\n# define QEMU_SOFTFLOAT_ATTR QEMU_FLATTEN __attribute__((noinline))\n#else // MSVC\n# define QEMU_NO_HARDFLOAT 0\n# define QEMU_SOFTFLOAT_ATTR\n#endif\n",
+          "after": "#if !defined(AS6_FORCE_SOFTFLOAT) || AS6_FORCE_SOFTFLOAT != 1\n#error This derivative requires explicit pure-software math\n#endif\n#define QEMU_NO_HARDFLOAT 1\n#define QEMU_SOFTFLOAT_ATTR QEMU_FLATTEN\n"
+        }
+      ]
+    },
+    {
+      "source": "qemu/fpu/softfloat-specialize.inc.c",
+      "destination": "vendor/fpu/softfloat-specialize.inc.c",
+      "sha256": "cd91c50329311b2b551db9eb4060655e1ba03cd4c0d899c83f083ae3f18b9fb6",
+      "output_sha256": "cd91c50329311b2b551db9eb4060655e1ba03cd4c0d899c83f083ae3f18b9fb6",
+      "edits": []
+    },
+    {
+      "source": "qemu/include/fpu/softfloat.h",
+      "destination": "vendor/include/fpu/softfloat.h",
+      "sha256": "2ba04ff839dd98961912ddbac4daff086b3906a3e658ea9b14a505cc12f83fd2",
+      "output_sha256": "2ba04ff839dd98961912ddbac4daff086b3906a3e658ea9b14a505cc12f83fd2",
+      "edits": []
+    },
+    {
+      "source": "qemu/include/fpu/softfloat-types.h",
+      "destination": "vendor/include/fpu/softfloat-types.h",
+      "sha256": "130ae6dff28a4af3fc6bab0494732f4d409898d3a99e5dbb2b08a3e2f311fe2e",
+      "output_sha256": "130ae6dff28a4af3fc6bab0494732f4d409898d3a99e5dbb2b08a3e2f311fe2e",
+      "edits": []
+    },
+    {
+      "source": "qemu/include/fpu/softfloat-helpers.h",
+      "destination": "vendor/include/fpu/softfloat-helpers.h",
+      "sha256": "f87c537dfaca33ee2f9bb668716a4d791852784c66e70ab589472209ce600a24",
+      "output_sha256": "f87c537dfaca33ee2f9bb668716a4d791852784c66e70ab589472209ce600a24",
+      "edits": []
+    },
+    {
+      "source": "qemu/include/fpu/softfloat-macros.h",
+      "destination": "vendor/include/fpu/softfloat-macros.h",
+      "sha256": "194ef48bb968c4df10518cf859993c2120fd2901ab65108bc63c01e4f2ef7994",
+      "output_sha256": "194ef48bb968c4df10518cf859993c2120fd2901ab65108bc63c01e4f2ef7994",
+      "edits": []
+    },
+    {
+      "source": "qemu/LICENSE",
+      "destination": "vendor/licenses/QEMU-LICENSE",
+      "sha256": "139c64b7a9ae62858ff969aae622ecfcf4f1519655bd92d2e70a1a2fb615690e",
+      "output_sha256": "139c64b7a9ae62858ff969aae622ecfcf4f1519655bd92d2e70a1a2fb615690e",
+      "edits": []
+    },
+    {
+      "source": "qemu/COPYING",
+      "destination": "vendor/licenses/COPYING",
+      "sha256": "6f04ae8364d0079a192b14635f4b1da294ce18724c034c39a6a41d1b09df6100",
+      "output_sha256": "6f04ae8364d0079a192b14635f4b1da294ce18724c034c39a6a41d1b09df6100",
+      "edits": []
+    },
+    {
+      "source": "qemu/COPYING.LIB",
+      "destination": "vendor/licenses/COPYING.LIB",
+      "sha256": "dc626520dcd53a22f727af3ee42c770e56c97a64fe3adb063799d8ab032fe551",
+      "output_sha256": "dc626520dcd53a22f727af3ee42c770e56c97a64fe3adb063799d8ab032fe551",
+      "edits": []
+    }
+  ],
+  "math_source_only": true,
+  "source_semantics": "TARGET_ARM",
+  "hardfloat": false,
+  "upstream_sources_modified": false
+}

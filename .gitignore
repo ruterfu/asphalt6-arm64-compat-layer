@@ -1,0 +1,24 @@
+# Produced from the user's own game copy; never committed.
+/generated/
+/build/
+/build-*/
+/dist/
+*.ipa
+*.zip
+Asphalt6Data/
+NativeArtwork/
+
+# Local toolchains and caches
+.DS_Store
+__pycache__/
+*.py[cod]
+*.o
+*.a
+*.dSYM/
+*.app/
+.vscode/
+.idea/
+
+# Signing material
+*.mobileprovision
+*.p12

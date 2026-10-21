@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "source_image_sha256": "4a2209881ab5933113a15770b0615807cfa7d73bf50a9326569a7ed20f77df00",
+  "source_export_sha256": "4ac21af1ad67156651f8ebb1c718f214e939cf875db779b2f7490fbbe7db0a51",
+  "register_layout_sha256": "a8e809104c7ee1b22d05f6072146dc742319e10ae97c17eb69a5b7f9fe77e624",
+  "register_size": 1024,
+  "output_sha256": "9f5105b46c1c47334d53f4bb9bb45929999ee6b2ef5c53688eda38708f1ccc93",
+  "instruction_bytes": 0,
+  "runtime_decoder": false
+}
