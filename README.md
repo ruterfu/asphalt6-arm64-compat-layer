@@ -66,7 +66,8 @@ python3 scripts/buildGame.py /path/to/Asphalt6.ipa \
 产物位于 `dist/`：
 
 - `Asphalt6ARM64.ipa`：可安装到手机的 App，默认不签名，用 SideStore、AltStore 等工具签名安装；
-- `Asphalt6Data.zip`：游戏资源包。
+- `Asphalt6Data.zip`：游戏资源包；
+- `NativeArtwork.zip`：高清背景包，仅在用 `--artwork` 提供高清图片时生成。
 
 常用选项：
 
@@ -75,6 +76,7 @@ python3 scripts/buildGame.py /path/to/Asphalt6.ipa \
 | `--jobs N` | 编译并行数，默认为 CPU 核数的一半 |
 | `--no-promote` | 不做寄存器优化，直接编译转换结果（代码更小、编译更快） |
 | `--skip-compile` | 只生成 `generated/` 中的源码，不编译 |
+| `--artwork PATH` | 校验高清背景图片（文件夹或 zip）并打包为 `NativeArtwork.zip` |
 
 如果要用自己的开发者证书直接签名：
 
