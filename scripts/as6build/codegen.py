@@ -211,6 +211,39 @@ def lower_fragments(exports, target, work, log):
     log('codegen: %d fragment modules verified' % len(expected))
 
 
+BUNDLE_SHA256 = 'fac017704c0071a324ff3d75a33a87a0e8df93cf3e54d1158edceaf6c713dca7'
+PAYLOAD_SHA256 = 'd741ab84d87021728f45a69326c1a39befe2a21bbf8acd703065b5156d31f60e'
+IMAGE_FILE_DELTA = 0x1000  # program virtual address - file offset, all sections
+
+
+def write_data_bundle(armv7, target, log):
+    """NativeDataBundle.cpp: the program's data image laid out for the layer.
+
+    The template carries the layout (regions, spans, bindings); the span bytes
+    are read from the user's program and filled into the payload array.
+    """
+    import re
+    image = Path(armv7).read_bytes()
+    template = (HERE / 'data/NativeDataBundle.template.cpp').read_text()
+    table = template[template.index('const as6native::DataSpan spans[] = {'):]
+    spans = re.findall(r'\{0x([0-9a-f]+)u,(\d+)u,payload\+(\d+),as6native::DataKind::\w+\}', table[:table.index('};')])
+    size = max(int(offset) + int(length) for _, length, offset in spans)
+    payload = bytearray(size)
+    for address, length, offset in spans:
+        start = int(address, 16) - IMAGE_FILE_DELTA
+        payload[int(offset):int(offset) + int(length)] = image[start:start + int(length)]
+    if hashlib.sha256(payload).hexdigest() != PAYLOAD_SHA256:
+        raise SystemExit('program data differs from the supported release')
+    rows = '\n'.join('  ' + ','.join('0x%02x' % v for v in payload[i:i + 24]) + ','
+                     for i in range(0, len(payload), 24))
+    text = template.replace('@AS6_PAYLOAD@', rows, 1)
+    if hashlib.sha256(text.encode()).hexdigest() != BUNDLE_SHA256:
+        raise SystemExit('NativeDataBundle.cpp differs from the reference')
+    target.mkdir(parents=True, exist_ok=True)
+    (target / 'NativeDataBundle.cpp').write_text(text)
+    log('codegen: data bundle verified')
+
+
 def hook_modules(reference, target, log):
     """Copies of translated modules with the layer's boundary hooks added."""
     target.mkdir(parents=True, exist_ok=True)
@@ -242,4 +275,4 @@ def generate(armv7, app, generated, work, ghidra=None, jdk=None, promote=True, l
         shutil.copytree(reference, generated / 'aot')
     hook_modules(reference, generated / 'host', log)
     lower_fragments(export_fragments(stream, work, ghidra, jdk, log), generated / 'host', work, log)
-    raise SystemExit('codegen: lowering stages are not automated yet (see README, "Status")')
+    write_data_bundle(armv7, generated / 'host', log)

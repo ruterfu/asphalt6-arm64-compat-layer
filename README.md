@@ -27,6 +27,7 @@
 | Python | 3.9 及以上 |
 | Ghidra | 12.1.4（构建时用于分析游戏程序） |
 | JDK | 21 |
+| capstone（Python 包） | 5.0.7，构建脚本会自动安装到 `build/venv`（需要联网） |
 | 游戏 IPA | **仅支持 Asphalt 6 1.3.2**（构建脚本会校验其中的程序；1.3.8 等其他版本不受支持。p.s. 因为我一开始就下的1.3.2，不想折腾了），校验值见下 |
 
 ### 支持的游戏版本
@@ -58,14 +59,22 @@ python3 scripts/buildGame.py /path/to/Asphalt6.ipa \
 
 1. **extract**：解开 IPA，确认是受支持的 1.3.2 版本；
 2. **resources**：从 IPA 组装出游戏资源文件夹 `Asphalt6Data`；
-3. **codegen**：把游戏程序转换成本机 C++ 源码，放在 `generated/`；
-4. **compile**：用 CMake 编译 iOS 静态库，翻译出的程序部分约需一小时；
+3. **codegen**：用 Ghidra 分析游戏程序（约 10 分钟），把它转换成本机 C++ 源码（约 10 分钟），再做按基本块的寄存器优化（约 10 分钟），结果放在 `generated/`；
+4. **compile**：用 CMake 编译 iOS 静态库，翻译出的程序部分约需 1.5–2.5 小时；
 5. **package**：链接、签名，输出安装包。
 
 产物位于 `dist/`：
 
 - `Asphalt6ARM64.ipa`：可安装到手机的 App，默认为临时签名（ad-hoc），可直接交给 SideStore、AltStore 等工具安装；
 - `Asphalt6Data.zip`：游戏资源包。
+
+常用选项：
+
+| 选项 | 作用 |
+| --- | --- |
+| `--jobs N` | 编译并行数，默认为 CPU 核数的一半 |
+| `--no-promote` | 不做寄存器优化，直接编译转换结果（代码更小、编译更快） |
+| `--skip-compile` | 只生成 `generated/` 中的源码，不编译 |
 
 如果要用自己的开发者证书直接签名：
 
@@ -127,8 +136,10 @@ python3 scripts/buildGame.py Asphalt6.ipa --identity "Apple Development: …" --
 | resources | ✅ 已完成：从原版 IPA 生成的 963 个文件与基准逐字节一致 |
 | 高清背景包 | ✅ 已完成：解压、校验、缺失回退均已测试 |
 | codegen：Ghidra 分析与导出 | ✅ 已验证：全新分析的导出在规范化后与基准完全一致 |
-| codegen：转换为 C++ | ⏳ 进行中，脚本目前会在此阶段停止并给出提示 |
-| compile / package | ✅ 已实现，待 codegen 完成后整体验证 |
+| codegen：转换为 C++ | ✅ 已验证：用 1.3.2 IPA 生成的 3214 个程序模块、48 个宿主模块和数据包与基准逐字节一致 |
+| codegen：寄存器优化 | ✅ 已接入，正确性经差分测试验证；实机性能待测 |
+| compile / package | ✅ 已实现，待完整编译后实机验证 |
+| 启动时解压资源包 / 高清背景包 | ✅ 已实现，已在 Mac 上测试 7 种情况；待实机验证 |
 
 ## 许可
 
