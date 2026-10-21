@@ -10,8 +10,8 @@ Stages (each verified against pinned hashes before the next one runs):
   4. compile   build the iOS libraries with CMake
   5. package   link and write the IPA (unsigned unless --identity/--profile)
 
-Outputs land in dist/: Asphalt6ARM64.ipa, Asphalt6Data.zip and, with
---artwork, the optional HD background pack NativeArtwork.zip.
+Outputs land in dist/: Asphalt6ARM64.ipa, Asphalt6Data.zip and the optional
+HD background pack NativeArtwork.zip.
 """
 import argparse
 import hashlib
@@ -100,8 +100,6 @@ def main():
     parser.add_argument('--profile', type=Path, help='provisioning profile matching --identity')
     parser.add_argument('--ghidra', type=Path, help='Ghidra 12.1.4 install (downloaded if omitted)')
     parser.add_argument('--jdk', type=Path, help='JDK 21 home (downloaded if omitted)')
-    parser.add_argument('--artwork', type=Path,
-                        help='HD background images (folder or zip) to verify and pack as NativeArtwork.zip')
     parser.add_argument('--no-promote', action='store_true',
                         help='compile the translated modules without block-structured register promotion')
     parser.add_argument('--skip-compile', action='store_true', help='stop after generating sources')
@@ -110,8 +108,7 @@ def main():
         parser.error('--identity and --profile go together')
 
     args.work.mkdir(parents=True, exist_ok=True)
-    if args.artwork:
-        artwork.package(args.artwork, args.dist / 'NativeArtwork.zip', log)
+    artwork.package(args.dist / 'NativeArtwork.zip', log=log)
     app, armv7 = extract(args.ipa.resolve(), args.work)
     data = resources.build(app, args.work / 'Asphalt6Data', log)
     generated = ROOT / 'generated'

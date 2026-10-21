@@ -1,15 +1,16 @@
-"""Package the optional HD background pack (dist/NativeArtwork.zip).
+"""Package the HD background pack (dist/NativeArtwork.zip) from artwork/.
 
-The images are not part of the game copy or this repository; supply them as a
-folder or zip with --artwork. Every file is checked against the pins compiled
-into the layer (host/src/HDArtworkPins.hpp) before it is packed.
+Every file is checked against the pins compiled into the layer
+(host/src/HDArtworkPins.hpp) before it is packed.
 """
 import hashlib
 import re
 import zipfile
 from pathlib import Path
 
-PINS = Path(__file__).resolve().parents[2] / 'host/src/HDArtworkPins.hpp'
+ROOT = Path(__file__).resolve().parents[2]
+PINS = ROOT / 'host/src/HDArtworkPins.hpp'
+SOURCE = ROOT / 'artwork'
 
 
 def pins():
@@ -32,7 +33,7 @@ def collect(source):
     return {n: b for n, b in found.items() if hashlib.sha256(b).hexdigest() == expected[n]}, expected
 
 
-def package(source, target, log=print):
+def package(target, source=SOURCE, log=print):
     verified, expected = collect(Path(source))
     missing = sorted(set(expected) - set(verified))
     if missing:
