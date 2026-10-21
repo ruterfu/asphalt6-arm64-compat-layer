@@ -25,7 +25,7 @@
 | Python | 3.9 及以上 |
 | Ghidra | 12.1.4（构建时用于分析游戏程序） |
 | JDK | 21 |
-| 游戏 IPA | Asphalt 6 1.3.2（构建脚本会校验其中的程序） |
+| 游戏 IPA | **仅支持 Asphalt 6 1.3.2**（构建脚本会校验其中的程序；1.3.8 等其他版本不受支持） |
 
 ## 构建
 
@@ -91,7 +91,7 @@ python3 scripts/buildGame.py Asphalt6.ipa --identity "Apple Development: …" --
 | extract | ✅ 已完成并验证 |
 | resources | ✅ 已完成：从原版 IPA 生成的 963 个文件与基准逐字节一致 |
 | 高清背景包 | ✅ 已完成：解压、校验、缺失回退均已测试 |
-| codegen：Ghidra 分析与导出 | 🔄 正在验证全新分析能否得到相同的导出结果 |
+| codegen：Ghidra 分析与导出 | ✅ 已验证：全新分析的导出在规范化后与基准完全一致 |
 | codegen：转换为 C++ | ⏳ 进行中，脚本目前会在此阶段停止并给出提示 |
 | compile / package | ✅ 已实现，待 codegen 完成后整体验证 |
 
