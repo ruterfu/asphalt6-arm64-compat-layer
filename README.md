@@ -91,7 +91,7 @@ python3 scripts/buildGame.py Asphalt6.ipa --identity "Apple Development: …" --
 
 没有这个压缩包、或其中某张图缺失或损坏时，对应画面自动使用游戏原版背景，不影响运行。
 
-> 高清背景包中的图片以游戏原版背景为基础，放大并扩展为 16:9 画幅制作而成，其画面内容与美术设计归 Gameloft 所有。高清背景包不包含在本仓库中，需单独获取。
+> 高清背景包中的图片以游戏原版背景为基础，使用 GPT Image 2 重绘成 16:9 画幅，其画面内容与美术设计归 Gameloft 所有。高清背景包不包含在本仓库中，需单独获取。
 
 ## 目录结构
 
@@ -101,7 +101,7 @@ python3 scripts/buildGame.py Asphalt6.ipa --identity "Apple Development: …" --
 | `host/src/` | 兼容层主体：系统接口、图形、音频、输入、界面适配、资源与高清背景包 |
 | `host/tests/` | 兼容层的独立测试 |
 | `aot/runtime/` | 翻译后程序所依赖的运行时：寄存器布局、内存访问、调度接口 |
-| `aot/math/` | 与 ARMv7 浮点逐位一致的软件浮点库（Berkeley SoftFloat） |
+| `aot/math/` | 与 ARMv7 浮点逐位一致的软件浮点库（源自 QEMU SoftFloat） |
 | `scripts/buildGame.py` | 一键构建入口 |
 | `scripts/as6build/` | 构建各阶段的实现与校验数据 |
 | `generated/` | 构建时生成，不提交 |
@@ -119,6 +119,6 @@ python3 scripts/buildGame.py Asphalt6.ipa --identity "Apple Development: …" --
 
 ## 许可
 
-- 兼容层代码：见各文件。
-- `aot/math/vendor/`：Berkeley SoftFloat，许可见 `aot/math/NOTICE.md`。
+- 兼容层代码：[MIT 许可证](LICENSE)（`aot/math/` 除外）。
+- `aot/math/`：源自 QEMU 的 SoftFloat 实现，保留原有的 SoftFloat-2a / BSD / GPL-2.0-or-later 混合许可，详见 `aot/math/NOTICE.md` 与 `aot/math/vendor/licenses/`。
 - 《狂野飙车 6》（Asphalt 6: Adrenaline）的游戏程序、美术、音频及相关商标归 Gameloft 所有，本仓库不包含也不分发这些内容。
