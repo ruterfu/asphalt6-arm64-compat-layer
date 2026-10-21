@@ -14,7 +14,7 @@ BUNDLE_RESOURCES = ('Default.png', 'Default@2x.png', 'Icon.png', 'Icon@2x.png', 
                     'Icon-Small@2x.png', 'en.lproj', 'de.lproj', 'es.lproj', 'fr.lproj', 'it.lproj',
                     'ja.lproj', 'ko.lproj', 'pt.lproj', 'zh.lproj', 'zh_Hans.lproj', 'zh_Hant.lproj')
 EXECUTABLE = 'AS6NativeGame'
-DEFAULT_BUNDLE_ID = 'com.ruterfu.asphalt6compat'
+BUNDLE_ID = 'com.ruterfu.asphalt6compat'
 ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -73,33 +73,21 @@ def link(build, executable):
     run(command)
 
 
-def sign(app, build, identity, profile):
-    if not identity:
-        # Unsigned: SideStore/AltStore and similar tools sign on install. The
-        # arm64 linker adds an ad-hoc signature by default; remove it.
-        run(['codesign', '--remove-signature', app / EXECUTABLE])
-        shutil.rmtree(app / '_CodeSignature', ignore_errors=True)
-        return
-    profile_plist = plistlib.loads(output(['security', 'cms', '-D', '-i', profile]).encode())
-    entitlements = build / 'entitlements.plist'
-    entitlements.write_bytes(plistlib.dumps(profile_plist['Entitlements']))
-    shutil.copyfile(profile, app / 'embedded.mobileprovision')
-    run(['codesign', '--force', '--sign', identity, '--entitlements', entitlements,
-         '--timestamp=none', '--generate-entitlement-der', app])
-    run(['codesign', '--verify', '--deep', '--strict', app])
+def strip_signature(app):
+    # The arm64 linker adds an ad-hoc signature; SideStore and similar tools
+    # sign the app on install, so ship it unsigned.
+    run(['codesign', '--remove-signature', app / EXECUTABLE])
+    shutil.rmtree(app / '_CodeSignature', ignore_errors=True)
 
 
-def package(build, game_app, manifest, dist, bundle_id=DEFAULT_BUNDLE_ID, identity=None, profile=None, log=print):
+def package(build, game_app, manifest, dist, log=print):
     staging = build / 'Payload'
     if staging.exists():
         shutil.rmtree(staging)
     app = staging / 'Asphalt6ARM64.app'
     app.mkdir(parents=True)
     link(build, app / EXECUTABLE)
-    if identity and profile:
-        bundle_id = plistlib.loads(output(['security', 'cms', '-D', '-i', profile]).encode())[
-            'Entitlements']['application-identifier'].split('.', 1)[1]
-    (app / 'Info.plist').write_bytes(plistlib.dumps(info_plist(game_app, bundle_id)))
+    (app / 'Info.plist').write_bytes(plistlib.dumps(info_plist(game_app, BUNDLE_ID)))
     (app / 'PkgInfo').write_bytes(b'APPL????')
     (app / 'ResourcePack').mkdir()
     shutil.copyfile(manifest, app / 'ResourcePack' / resources.MANIFEST_NAME)
@@ -111,7 +99,7 @@ def package(build, game_app, manifest, dist, bundle_id=DEFAULT_BUNDLE_ID, identi
             shutil.copyfile(source, app / name)
     (app / 'Licenses').mkdir()
     shutil.copyfile(ROOT / 'aot/math/NOTICE.md', app / 'Licenses/softfloat-NOTICE.md')
-    sign(app, build, identity, profile)
+    strip_signature(app)
 
     dist.mkdir(parents=True, exist_ok=True)
     ipa = dist / 'Asphalt6ARM64.ipa'
@@ -119,5 +107,5 @@ def package(build, game_app, manifest, dist, bundle_id=DEFAULT_BUNDLE_ID, identi
         for path in sorted(staging.rglob('*')):
             if path.is_file() or path.is_symlink():
                 archive.write(path, path.relative_to(build))
-    log('package: %s (%s, bundle id %s)' % (ipa, 'signed' if identity else 'unsigned', bundle_id))
+    log('package: %s (unsigned, bundle id %s)' % (ipa, BUNDLE_ID))
     return ipa

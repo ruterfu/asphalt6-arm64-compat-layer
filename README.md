@@ -20,15 +20,24 @@
 
 ## 环境要求
 
-| 项目 | 版本 |
+需要自行安装：
+
+| 项目 | 要求 |
 | --- | --- |
-| macOS + Xcode | 含 iOS 17 及以上 SDK |
-| CMake | 3.20 及以上 |
-| Python | 3.9 及以上 |
-| Ghidra | 12.1.4（构建时用于分析游戏程序） |
-| JDK | 21 |
-| capstone（Python 包） | 5.0.7，构建脚本会自动安装到 `build/venv`（需要联网） |
-| 游戏 IPA | **仅支持 Asphalt 6 1.3.2**（构建脚本会校验其中的程序；1.3.8 等其他版本不受支持。p.s. 因为我一开始就下的1.3.2，不想折腾了），校验值见下 |
+| Mac | Apple Silicon（M 系列芯片） |
+| Xcode | 完整的 Xcode，含 iOS 17 及以上 SDK（仅命令行工具不够） |
+| CMake | 3.20 及以上，例如 `brew install cmake` |
+| Python | 3.9 及以上（macOS 自带的即可） |
+
+首次运行时自动安装到 `build/`（需要联网，约 800MB）：
+
+| 项目 | 版本 | 用途 |
+| --- | --- | --- |
+| Python 包 | `scripts/requirements.txt`：capstone 5.0.7、tqdm 4.67.1 | 程序转换、进度显示 |
+| Ghidra | 12.1.4（官方发布包，校验 SHA-256） | 分析游戏程序 |
+| JDK | Temurin 21.0.12.1（官方发布包，校验 SHA-256） | 运行 Ghidra |
+
+此外需要自备游戏 IPA：**仅支持 Asphalt 6 1.3.2**（构建脚本会校验其中的程序；1.3.8 等其他版本不受支持。p.s. 因为我一开始就下的1.3.2，不想折腾了），校验值见下。
 
 ### 支持的游戏版本
 
@@ -51,37 +60,31 @@ shasum -a 256 Asphalt6.armv7                                 # 游戏程序 ARMv
 ## 构建
 
 ```sh
-python3 scripts/buildGame.py /path/to/Asphalt6.ipa \
-    --ghidra /path/to/ghidra_12.1.4_PUBLIC --jdk /path/to/jdk-21
+python3 scripts/buildGame.py /path/to/Asphalt6.ipa
 ```
 
 脚本依次执行以下阶段，每一步都用固定的 SHA-256 校验结果，任何不一致都会立即停止：
 
 1. **extract**：解开 IPA，确认是受支持的 1.3.2 版本；
 2. **resources**：从 IPA 组装出游戏资源文件夹 `Asphalt6Data`；
-3. **codegen**：用 Ghidra 分析游戏程序（约 10 分钟），把它转换成本机 C++ 源码（约 10 分钟），再做按基本块的寄存器优化（约 10 分钟），结果放在 `generated/`；
-4. **compile**：用 CMake 编译 iOS 静态库，翻译出的程序部分约需 1.5–2.5 小时；
-5. **package**：链接、签名，输出安装包。
+3. **codegen**：用 Ghidra 分析游戏程序，转换成本机 C++ 源码，再做按基本块的寄存器优化，结果放在 `generated/`（共约 20 分钟）；
+4. **compile**：用 CMake 编译 iOS 静态库，显示进度条，约需 1.5–2.5 小时；
+5. **package**：链接并输出未签名的安装包。
+
+转换和编译都会显示进度条；编译的完整输出保存在 `build/compile.log`。
 
 产物位于 `dist/`：
 
-- `Asphalt6ARM64.ipa`：可安装到手机的 App，默认不签名，用 SideStore、AltStore 等工具签名安装；
+- `Asphalt6ARM64.ipa`：未签名的 App，用 SideStore、AltStore 等工具签名安装；
 - `Asphalt6Data.zip`：游戏资源包；
 - `NativeArtwork.zip`：高清背景包（可选安装），由 `artwork/` 中的图片校验后打包。
 
-常用选项：
+可选参数：
 
-| 选项 | 作用 |
+| 参数 | 作用 |
 | --- | --- |
 | `--jobs N` | 编译并行数，默认为 CPU 核数的一半 |
 | `--no-promote` | 不做寄存器优化，直接编译转换结果（代码更小、编译更快） |
-| `--skip-compile` | 只生成 `generated/` 中的源码，不编译 |
-
-如果要用自己的开发者证书直接签名：
-
-```sh
-python3 scripts/buildGame.py Asphalt6.ipa --identity "Apple Development: …" --profile your.mobileprovision
-```
 
 ## 安装
 

@@ -18,8 +18,6 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
-VENV = ROOT / 'build/venv'
-CAPSTONE = 'capstone==5.0.7'
 PIPELINE = HERE / 'pipeline'
 # SHA-256 of the normalized, uncompressed stream (see normalize_stream).
 STREAM_SHA256 = '815d958ced17e73334c0f470e53322ddb65f942cb6efefc0021ad1096782610d'
@@ -34,7 +32,6 @@ RECOVERIES = (
 )
 LAYOUT_FIELDS = ('image_sha256', 'program_name', 'lang', 'compiler', 'pcode_source', 'flow_overrides_included',
                  'byte_order', 'address_spaces', 'registers', 'userops')
-GHIDRA_VERSION = '12.1.4'
 
 
 def sha256(path):
@@ -43,16 +40,6 @@ def sha256(path):
         for block in iter(lambda: stream.read(1 << 20), b''):
             digest.update(block)
     return digest.hexdigest()
-
-
-def locate_tools(ghidra, jdk):
-    ghidra = Path(ghidra or os.environ.get('GHIDRA_INSTALL_DIR', ''))
-    jdk = Path(jdk or os.environ.get('JAVA_HOME', ''))
-    if not (ghidra / 'support/analyzeHeadless').is_file():
-        raise SystemExit('Ghidra %s not found: pass --ghidra or set GHIDRA_INSTALL_DIR' % GHIDRA_VERSION)
-    if not (jdk / 'bin/java').is_file():
-        raise SystemExit('JDK 21 not found: pass --jdk or set JAVA_HOME')
-    return ghidra, jdk
 
 
 def normalize_stream(source, target):
@@ -146,18 +133,6 @@ def recover_supplemental(stream, work, ghidra, jdk, log):
     return paths
 
 
-def lowering_python(log):
-    """Python with the pinned capstone the lowering planners require."""
-    python = VENV / 'bin/python'
-    probe = [str(python), '-c', 'import capstone,sys;sys.exit(capstone.__version__!="5.0.7")']
-    if python.is_file() and subprocess.run(probe).returncode == 0:
-        return python
-    log('codegen: preparing %s in %s' % (CAPSTONE, VENV))
-    subprocess.run([sys.executable, '-m', 'venv', str(VENV)], check=True)
-    subprocess.run([str(python), '-m', 'pip', 'install', '-q', CAPSTONE], check=True)
-    return python
-
-
 def lower_stream(stream, armv7, supplemental, output, log):
     expected = json.loads((HERE / 'data/aot-sha256.json').read_text())
     if output.is_dir() and {p.name for p in output.glob('*.cpp')} == set(expected) and \
@@ -166,8 +141,8 @@ def lower_stream(stream, armv7, supplemental, output, log):
         return
     if output.exists():
         shutil.rmtree(output)
-    log('codegen: translating the program (about 10 minutes)')
-    subprocess.run([str(lowering_python(log)), '-I', str(HERE / 'lower.py'), str(stream), str(armv7),
+    log('codegen: translating the program')
+    subprocess.run([sys.executable, '-I', str(HERE / 'lower.py'), str(stream), str(armv7),
                     ','.join(str(p) for p in supplemental), str(output)], check=True)
     wrong = sorted(n for n, h in expected.items() if not (output / n).is_file() or sha256(output / n) != h)
     if wrong or len(list(output.glob('*.cpp'))) != len(expected):
@@ -180,7 +155,7 @@ def promote_modules(source, target, log):
     if target.exists():
         shutil.rmtree(target)
     log('codegen: register promotion')
-    subprocess.run([sys.executable, '-I', str(HERE / 'promote.py'), str(source), str(target)], check=True)
+    subprocess.run([sys.executable, '-I', str(HERE / 'promote.py'), str(source), str(target), '--quiet'], check=True)
 
 
 def export_fragments(stream, work, ghidra, jdk, log):
@@ -203,7 +178,7 @@ def export_fragments(stream, work, ghidra, jdk, log):
 
 def lower_fragments(exports, target, work, log):
     expected = json.loads((HERE / 'data/fragments-sha256.json').read_text())
-    subprocess.run([str(lowering_python(log)), '-I', str(HERE / 'fragments.py'), str(exports), str(target),
+    subprocess.run([sys.executable, '-I', str(HERE / 'fragments.py'), str(exports), str(target),
                     str(work / 'fragment-tools')], check=True, stdout=subprocess.DEVNULL)
     wrong = sorted(n for n, h in expected.items() if not (target / n).is_file() or sha256(target / n) != h)
     if wrong:
@@ -261,8 +236,7 @@ def hook_modules(reference, target, log):
     log('codegen: hooked modules written')
 
 
-def generate(armv7, app, generated, work, ghidra=None, jdk=None, promote=True, log=print):
-    ghidra, jdk = locate_tools(ghidra, jdk)
+def generate(armv7, app, generated, work, ghidra, jdk, promote=True, log=print):
     stream = export_pcode(armv7, work, ghidra, jdk, log)
     supplemental = recover_supplemental(stream, work, ghidra, jdk, log)
     reference = work / 'aot'

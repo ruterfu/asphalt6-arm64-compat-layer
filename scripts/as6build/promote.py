@@ -242,17 +242,22 @@ def main():
     parser.add_argument('source', type=Path)
     parser.add_argument('output', type=Path)
     parser.add_argument('--only', nargs='*')
+    parser.add_argument('--quiet', action='store_true', help='progress bar instead of per-module notes')
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
     names = args.only or sorted(p.name for p in args.source.glob('native_*.cpp'))
     refused = 0
+    if args.quiet:
+        from tqdm import tqdm
+        names = tqdm(names, unit='module', desc='[buildGame] promote', smoothing=0.05)
     for name in names:
         source = (args.source / name).read_text()
         try:
             text = promote(source)
         except Refused as error:
             refused += 1
-            print(f'{name}: kept unpromoted ({error})', file=sys.stderr)
+            if not args.quiet:
+                print(f'{name}: kept unpromoted ({error})', file=sys.stderr)
             text = source
         text = relocatable(text)
         target = args.output / name
@@ -262,7 +267,8 @@ def main():
         for extra in args.source.glob('*.cpp'):
             if not extra.name.startswith('native_'):
                 (args.output / extra.name).write_text(relocatable(extra.read_text()))
-    print(f'{len(names) - refused} promoted, {refused} kept', file=sys.stderr)
+    if not args.quiet:
+        print(f'{len(names) - refused} promoted, {refused} kept', file=sys.stderr)
 
 
 if __name__ == '__main__':

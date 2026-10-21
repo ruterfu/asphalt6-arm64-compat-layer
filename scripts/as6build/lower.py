@@ -17,6 +17,7 @@ from pathlib import Path
 
 LOWER = Path(__file__).resolve().parent / 'pipeline' / 'lower'
 SHARD = 512
+MODULES = 3213  # reference module count, for progress only
 # The reference stream was generated in stages that ended after 32 and 4096
 # merged records; each stage end closed a module early. Module boundaries
 # (and so module names and contents) follow those cut points.
@@ -159,9 +160,10 @@ def generate(stream, image, supplemental, output, log=print):
         text, keys = ModuleGenerator(document(code, name)).module(code, name)
         (output / (name + '.cpp')).write_text(text)
         modules.append({'name': name, 'first_key': keys[0], 'last_key': keys[-1]})
-        if len(modules) % 200 == 0:
-            log('codegen: %d modules' % len(modules))
+        bar.update(1)
 
+    from tqdm import tqdm
+    bar = tqdm(total=MODULES, unit='module', desc='[buildGame] translate', smoothing=0.05)
     records = merged(stream, supplemental)
     header = next(records)
     pending, prior, processed = [], -1, 0
@@ -177,6 +179,7 @@ def generate(stream, image, supplemental, output, log=print):
             processed += len(pending)
             pending = []
     flush(pending)
+    bar.close()
 
     layout = lift.Generator(dict(header, functions=[]))
     write_program(output, modules, layout.register_size, layout.pc_offset)
