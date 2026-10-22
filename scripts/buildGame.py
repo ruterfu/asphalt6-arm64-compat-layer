@@ -20,6 +20,7 @@ similar), Asphalt6Data.zip and, when artwork/ holds the HD images,
 NativeArtwork.zip.
 """
 import argparse
+import fcntl
 import hashlib
 import os
 import platform
@@ -60,6 +61,30 @@ def sha256(path):
         for block in iter(lambda: stream.read(1 << 20), b''):
             digest.update(block)
     return digest.hexdigest()
+
+
+def single_instance():
+    """Refuse to run while another buildGame.py works on this checkout.
+
+    flock is released by the kernel when the process exits, however it ends.
+    The descriptor survives the re-exec into build/venv (same process).
+    """
+    inherited = os.environ.get('AS6_BUILD_LOCK_FD')
+    if inherited:
+        return int(inherited)
+    lock = ROOT / 'build/buildGame.lock'
+    lock.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(lock, os.O_RDWR | os.O_CREAT, 0o644)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        owner = os.read(fd, 32).decode(errors='replace').strip() or 'unknown'
+        toolchain.fail('another buildGame.py is already running (pid %s); wait for it to finish' % owner)
+    os.ftruncate(fd, 0)
+    os.write(fd, str(os.getpid()).encode())
+    os.set_inheritable(fd, True)
+    os.environ['AS6_BUILD_LOCK_FD'] = str(fd)
+    return fd
 
 
 def extract(ipa):
@@ -139,6 +164,7 @@ def main():
     if not args.ipa.is_file():
         parser.error('IPA not found: %s' % args.ipa)
 
+    single_instance()
     # ensure_venv re-runs this script inside build/venv; announce step 1 once.
     if not os.environ.get('AS6_BUILD_IN_VENV'):
         step(1, 'Preparing toolchain')

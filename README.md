@@ -121,6 +121,8 @@ python3 scripts/buildGame.py /path/to/Asphalt6.ipa
 
 每一步都会显示进度：下载、导出、转换、寄存器优化和编译有进度条，Ghidra 分析等无法预估进度的阶段显示已用时间；Ghidra 的输出保存在 `build/work/pcode/`，编译的完整输出保存在 `build/compile.log`。
 
+同一份代码同时只能运行一个 `buildGame.py`；重复启动时会提示已有构建正在运行并退出。
+
 产物位于 `dist/`：
 
 - `Asphalt6ARM64.ipa`：未签名的 App，用 SideStore、AltStore 等工具签名安装；

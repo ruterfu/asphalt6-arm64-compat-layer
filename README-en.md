@@ -121,6 +121,8 @@ The script runs in 6 steps. Every step checks its result against fixed SHA-256 h
 
 Every step shows its progress: downloading, export, conversion, register promotion and compilation have progress bars, and phases that cannot estimate progress (such as the Ghidra analysis) show the elapsed time. Ghidra's output is kept in `build/work/pcode/`, and the full compiler output in `build/compile.log`.
 
+Only one `buildGame.py` can run per checkout at a time; starting another one reports that a build is already running and exits.
+
 Outputs are written to `dist/`:
 
 - `Asphalt6ARM64.ipa`: the unsigned app; sign and install it with SideStore, AltStore or similar tools;
