@@ -50,7 +50,7 @@ struct Mapping {
     Rect stageClip{};
     double roundTripPixels=0;
 };
-enum class Kind { Unknown, Loading, Menu, Race, TrackPlane, CareerSelection, PauseMenu, RaceHud, Multiplayer, Paint, Tuning };
+enum class Kind { Unknown, Loading, Menu, Race, TrackPlane, CareerSelection, PauseMenu, RaceHud, Multiplayer, Paint, Tuning, Info };
 struct Movie {
     std::uint32_t handler=0,root=0,definition=0,context=0;
     Kind kind=Kind::Unknown;
@@ -65,6 +65,8 @@ struct Movie {
     std::vector<MenuControl> roundButtons;
     bool roundButtonsDiscovered=false;
     std::vector<PivotControl> pivotControls;
+    // Info page: the Twitter row's logo (unnamed, just before its mc_icons).
+    Node twitterLogo;bool twitterLogoBound=false;
     unsigned advances=0;
     bool discoveryDone=false,hasAdvanced=false;
     std::uint32_t manager=0,rayManager=0;
@@ -251,7 +253,7 @@ void discoverRoundButtons(GuestVM *vm,State &s,Movie &m) {
         if(find(vm,s,m.handler,path))m.roundButtons.push_back({{path},0.,1.});
 }
 bool identify(GuestVM *vm,State &s,Movie &m) {
-    if(m.kind!=Kind::Unknown)return m.kind==Kind::Loading||m.kind==Kind::CareerSelection||m.kind==Kind::Menu||m.kind==Kind::PauseMenu||m.kind==Kind::RaceHud||m.kind==Kind::Multiplayer||m.kind==Kind::Paint||m.kind==Kind::Tuning;
+    if(m.kind!=Kind::Unknown)return m.kind==Kind::Loading||m.kind==Kind::CareerSelection||m.kind==Kind::Menu||m.kind==Kind::PauseMenu||m.kind==Kind::RaceHud||m.kind==Kind::Multiplayer||m.kind==Kind::Paint||m.kind==Kind::Tuning||m.kind==Kind::Info;
     if(m.discoveryDone)return false;
     m.discoveryDone=true;
     // Preserve the current Career/Loading scope. The one additional menu
@@ -283,6 +285,19 @@ bool identify(GuestVM *vm,State &s,Movie &m) {
                            "menu_custom_controls.back_custom_controls_btn","menu_help.component_help.back_btn",
                            "menu_sound.component_sound.back_btn","menu_video.component_video.back_btn"})
             m.pivotControls.push_back({{p},{1158,1190},round,RoundButtonScale});
+    } else if(find(vm,s,m.handler,"menu_Info.btn_Help")) {
+        m.kind=Kind::Info;
+        // Rows keep their full-width stripes and highlight bars; their labels
+        // and icons, and the round buttons, regain their shape about the
+        // centre of their own art (local twips).
+        const double round=roundButtonXScale();
+        for(const char *row:{"menu_Info.btn_Help","menu_Info.btn_Controls","menu_Info.btn_About","menu_Info.btn_Reset"})
+            m.pivotControls.push_back({{std::string(row)+".mc_label"},{1674,213},round,1});
+        for(const char *row:{"menu_Info.btn_Help","menu_Info.btn_Controls","menu_Info.btn_About","menu_Info.btn_Twitter","menu_Info.btn_Reset"})
+            m.pivotControls.push_back({{std::string(row)+".mc_icons"},{-106,0},round,1});
+        for(const char *p:{"menu_Info.btn_info_back","menu_Help.btn_Back","menu_Controls.btn_Back","menu_Controls.btn_Prev",
+                           "menu_Controls.btn_Next","menu_About.btn_Back"})
+            m.pivotControls.push_back({{p},{-357,33},round,1});
     } else if(find(vm,s,m.handler,"menu_1.btn_back_main")) {
         m.kind=Kind::Multiplayer;
         // Back of every multiplayer page; they share one authored corner.
@@ -308,7 +323,7 @@ bool identify(GuestVM *vm,State &s,Movie &m) {
         m.kind=Kind::RaceHud;
         for(const char *p:{"hud.mc_touchToSkip.btn_skip","menu_Tutorial.btn_next"})single(m,p);
     }
-    return m.kind==Kind::Loading||m.kind==Kind::CareerSelection||m.kind==Kind::Menu||m.kind==Kind::PauseMenu||m.kind==Kind::RaceHud||m.kind==Kind::Multiplayer||m.kind==Kind::Paint||m.kind==Kind::Tuning;
+    return m.kind==Kind::Loading||m.kind==Kind::CareerSelection||m.kind==Kind::Menu||m.kind==Kind::PauseMenu||m.kind==Kind::RaceHud||m.kind==Kind::Multiplayer||m.kind==Kind::Paint||m.kind==Kind::Tuning||m.kind==Kind::Info;
 }
 
 Movie *movie(GuestVM *vm,State &s,std::uint32_t handler) {
@@ -722,6 +737,7 @@ bool applyResourceForeground(GuestVM *vm,State &s,Movie &m,const AS6OriginalUIHo
 // about their own art (pivotControls).
 constexpr double PauseButtonWidth=.7;
 constexpr size_t PauseButtonGroups=8;
+bool applyPivotControls(GuestVM *vm,State &s,Movie &m);
 bool applyPauseButtons(GuestVM *vm,State &s,Movie &m) {
     float stage[4]{};
     if(!read(vm,m.definition+0xb4,stage,sizeof(stage)))return false;
@@ -734,6 +750,33 @@ bool applyPauseButtons(GuestVM *vm,State &s,Movie &m) {
     unsigned applied=0,changed=0;
     if(!applyStageAffine(vm,s,m,buttons,applied,changed,0,0,0,PauseButtonGroups)||
        !applyStageAffine(vm,s,m,question,applied,changed,0,0,PauseButtonGroups))return false;
+    return applyPivotControls(vm,s,m);
+}
+// Info page: the Twitter row draws a logo instead of a label. It is unnamed,
+// the display list entry just before the row's mc_icons, with an identity
+// matrix; once found it regains its shape about its own centre like the labels.
+bool applyInfoPage(GuestVM *vm,State &s,Movie &m) {
+    if(!m.twitterLogoBound){
+        const std::uint32_t row=find(vm,s,m.handler,"menu_Info.btn_Twitter"),icons=find(vm,s,m.handler,"menu_Info.btn_Twitter.mc_icons");
+        std::uint32_t words[128]{};
+        if(row&&icons&&read(vm,row,words,sizeof(words)))for(std::uint32_t list:words){
+            if(list<0x1000||list&3)continue;
+            std::uint32_t entries[64]{};if(!read(vm,list,entries,sizeof(entries)))continue;
+            for(int i=1;i<64&&!m.twitterLogoBound;++i)if(entries[i]==icons){
+                std::uint32_t matrixAt=0;float m6[6]{};
+                if(entries[i-1]&&word(vm,entries[i-1]+0x4c,matrixAt)&&read(vm,matrixAt,m6,24)&&
+                   m6[0]==1&&m6[1]==0&&m6[2]==0&&m6[3]==0&&m6[4]==1&&m6[5]==0){
+                    m.pivotControls.push_back({Node{},{-1576,-906},roundButtonXScale(),1});
+                    bindUnnamed(vm,m.pivotControls.back().node,entries[i-1]);
+                    m.twitterLogoBound=true;
+                }
+            }
+            if(m.twitterLogoBound)break;
+        }
+    }
+    return applyPivotControls(vm,s,m);
+}
+bool applyPivotControls(GuestVM *vm,State &s,Movie &m) {
     for(auto &control:m.pivotControls){
         auto &n=control.node;
         if(!resolve(vm,s,m,n))continue;
@@ -920,6 +963,7 @@ extern "C" bool AS6OriginalUIApply(GuestVM *vm,std::uint32_t handler) {
         unsigned(m->kind),handler,m->root,m->definition,h.windowBoundsPoints[2],h.windowBoundsPoints[3],h.safeNormalizedRect[0],h.safeNormalizedRect[1],h.safeNormalizedRect[2],h.safeNormalizedRect[3],h.originalViewBoundsPoints[2],h.originalViewBoundsPoints[3],double(scale),driver,(unsigned long long)h.revision);}
     if(m->kind==Kind::Menu){discoverSelectionControls(vm,s,*m);discoverRoundButtons(vm,s,*m);return applyBack20(vm,s,*m,h,metricsReady);}
     if(m->kind==Kind::PauseMenu)return applyPauseButtons(vm,s,*m);
+    if(m->kind==Kind::Info)return applyInfoPage(vm,s,*m);
     if(m->kind==Kind::Multiplayer){
         // Back buttons sit over the page titles: move them left by 6.5% of the stage.
         float stage[4]{};

@@ -350,10 +350,49 @@ static BOOL HostNativeTouchSnapshotReturn(GuestVM *vm, id target, SEL selector, 
 }
 
 
-@interface PortGLView : PortGuestView
+@interface PortGLView : PortGuestView <UITextFieldDelegate>
 @end
 @implementation PortGLView
 + (Class)layerClass { return objc_getClass("CAEAGLLayer") ?: [CALayer class]; }
+// The original EAGLView is the delegate of the game's text field (name entry).
+// The original places it in portrait 320x480 coordinates turned 90 degrees
+// inside the (itself rotated) game view; on the landscape host that lands off
+// screen or sideways, so while editing it is moved onto the window, upright
+// and centred above the keyboard. The game reaches the field by reference. Return is passed on to the original
+// textFieldShouldReturn:, which resigns the field so the game reads the text.
+- (void)textFieldDidBeginEditing:(UITextField *)textField {
+    UIView *superview = textField.superview;
+    UIWindow *window = textField.window ?: self.window;
+    NSLog(@"[uikit] text field begin hidden=%d frame=%@ superview=%@ window=%@",
+          textField.hidden, NSStringFromCGRect(textField.frame), NSStringFromClass([superview class]),
+          NSStringFromCGRect(window.bounds));
+    if (!window) return;
+    const CGRect bounds = window.bounds;
+    const CGFloat width = MIN(bounds.size.width * 0.5, 420), height = 44;
+    if (textField.superview != window) [window addSubview:textField];
+    textField.transform = CGAffineTransformIdentity;
+    textField.frame = CGRectMake((bounds.size.width - width) * 0.5, bounds.size.height * 0.12, width, height);
+    textField.hidden = NO;
+    [window bringSubviewToFront:textField];
+    // Moving a first responder to another superview may resign it.
+    if (!textField.isFirstResponder) [textField becomeFirstResponder];
+}
+- (BOOL)textFieldShouldReturn:(UITextField *)textField {
+    GuestVM *vm = GuestVMShared();
+    if (!vm || !self.guestAddress) return YES;
+    GuestLock(vm);
+    BOOL result = YES;
+    @try {
+        const gva_t sel = GuestObjCGuestSelNamed(vm, "textFieldShouldReturn:");
+        if (!sel) return YES;
+        GuestSetReg(vm, 0, self.guestAddress);
+        GuestSetReg(vm, 1, sel);
+        GuestSetReg(vm, 2, GuestObjCWrap(vm, textField));
+        GuestTrace(vm, @"[uikit] text field return -> guest %#x", self.guestAddress);
+        if (GuestObjCSend(vm, self.guestAddress, sel, NO)) result = (GuestReg(vm, 0) & 0xff) != 0;
+    } @finally { GuestUnlock(vm); }
+    return result;
+}
 @end
 
 @interface PortGuestActionTarget : NSObject
