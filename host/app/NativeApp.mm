@@ -252,7 +252,7 @@ static BOOL BootNativeGame(void) {
         for(;;) {
             show(@"正在验证游戏资源");
             error=nil;NSDictionary *details=nil;
-            @try {ready=AS6ValidateDocumentResources(fullHash,&details,&error);}
+            @try {ready=AS6ValidateDocumentResources(fullHash,&details,&error,^(double fraction){show([NSString stringWithFormat:@"正在验证游戏资源 %d%%",(int)(fraction*100)]);});}
             @catch(NSException *){ready=NO;error=nil;}
             if(!ready) {
                 if(!installedData&&AS6ResourceArchivePresent()) {

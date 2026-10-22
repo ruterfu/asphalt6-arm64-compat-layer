@@ -2,8 +2,10 @@
 
 // Default production validation uses the compiled manifest digest, the trusted
 // small copy in the real App bundle, and Documents/Asphalt6Data. Call off-main.
+// `progress` (optional) receives the checked fraction of bytes, each whole
+// percent once.
 FOUNDATION_EXPORT BOOL AS6ValidateDocumentResources(BOOL forceFullHash,
-    NSDictionary **details, NSError **error);
+    NSDictionary **details, NSError **error, void (^progress)(double fraction));
 FOUNDATION_EXPORT NSString *AS6ExpectedResourceRootPath(void);
 FOUNDATION_EXPORT void AS6PrepareResourceImportHelp(void);
 FOUNDATION_EXPORT NSString *AS6ResourceRootPath(void); // nil until validated
