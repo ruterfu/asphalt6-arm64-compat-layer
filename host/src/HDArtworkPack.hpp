@@ -19,6 +19,11 @@ extern "C" {
 // Every pack file is installed in Asphalt6Data/NativeArtwork and verified.
 // Missing files simply fall back to the original backgrounds.
 BOOL AS6HDArtworkComplete(void);
+// Hashes every pack file (AS6HDArtworkComplete) and keeps the result; called
+// only by the startup resource check. AS6HDArtworkAvailable returns the last
+// scan without touching files (NO before any scan).
+BOOL AS6HDArtworkScan(void);
+BOOL AS6HDArtworkAvailable(void);
 BOOL AS6HDArtworkArchivePresent(void);
 // Installs the missing pack files from Documents/NativeArtwork.zip, each
 // verified against HDArtworkPins.hpp. Returns YES (and deletes the archive)

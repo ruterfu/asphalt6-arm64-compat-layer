@@ -2,6 +2,7 @@
 #import "ResourcePaths.h"
 #import "ZipArchive.hpp"
 #import <CommonCrypto/CommonDigest.h>
+#include <atomic>
 #include <cerrno>
 #include <iterator>
 #include <vector>
@@ -63,6 +64,20 @@ const std::uint8_t *as6_hd_artwork::LoadingHeader() {
 extern "C" BOOL AS6HDArtworkComplete(void) {
     ErrnoScope preserve;
     return InstalledCount() == std::size(as6_hd_artwork::kPackFiles);
+}
+
+namespace {
+std::atomic<bool> scannedComplete{false};
+}
+
+extern "C" BOOL AS6HDArtworkScan(void) {
+    const BOOL complete = AS6HDArtworkComplete();
+    scannedComplete.store(complete, std::memory_order_release);
+    return complete;
+}
+
+extern "C" BOOL AS6HDArtworkAvailable(void) {
+    return scannedComplete.load(std::memory_order_acquire);
 }
 
 extern "C" BOOL AS6HDArtworkArchivePresent(void) {

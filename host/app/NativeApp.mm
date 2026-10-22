@@ -262,7 +262,9 @@ static BOOL BootNativeGame(void) {
                 }
                 break;
             }
-            if(!triedArtwork&&!AS6HDArtworkComplete()&&AS6HDArtworkArchivePresent()) {
+            // The scan result is kept for the rest of the run (AS6HDArtworkAvailable).
+            const BOOL artworkComplete=AS6HDArtworkScan();
+            if(!triedArtwork&&!artworkComplete&&AS6HDArtworkArchivePresent()) {
                 triedArtwork=YES;
                 show(@"正在解压高清背景包");
                 if(AS6InstallHDArtwork())continue;
