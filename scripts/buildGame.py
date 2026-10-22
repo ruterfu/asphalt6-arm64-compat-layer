@@ -63,6 +63,49 @@ def sha256(path):
     return digest.hexdigest()
 
 
+class Stage:
+    """build/.finish-stepN records the inputs a finished step was built from.
+
+    A step is skipped only when its outputs exist and the recorded fingerprint
+    matches the current inputs; each fingerprint includes the previous step's,
+    so redoing an earlier step redoes the later ones too.
+    """
+
+    def __init__(self, number, title, *inputs):
+        self.number, self.title = number, title
+        self.marker = ROOT / ('build/.finish-step%d' % number)
+        self.fingerprint = hashlib.sha256('\n'.join(inputs).encode()).hexdigest()
+
+    def done(self, *outputs):
+        step(self.number, self.title)
+        if all(Path(o).exists() for o in outputs) and self.marker.is_file() and \
+                self.marker.read_text().strip() == self.fingerprint:
+            log('up to date, skipped')
+            return True
+        self.marker.unlink(missing_ok=True)
+        return False
+
+    def finish(self):
+        self.marker.write_text(self.fingerprint + '\n')
+
+
+def tree_digest(*paths):
+    """Content hash of files (or every file under folders), by relative path."""
+    digest = hashlib.sha256()
+    for root in paths:
+        root = Path(root)
+        files = [root] if root.is_file() else sorted(p for p in root.rglob('*') if p.is_file()
+                                                     and '__pycache__' not in p.parts and p.name != '.DS_Store')
+        for path in files:
+            digest.update(str(path.relative_to(ROOT)).encode() + b'\0' + sha256(path).encode() + b'\n')
+    return digest.hexdigest()
+
+
+def library_digest(build):
+    return hashlib.sha256(''.join('%s:%d:%d\n' % (p.name, p.stat().st_size, p.stat().st_mtime_ns)
+                                  for p in sorted(build.glob('*.a'))).encode()).hexdigest()
+
+
 def single_instance():
     """Refuse to run while another buildGame.py works on this checkout.
 
@@ -177,24 +220,51 @@ def main():
 
     ghidra, jdk = toolchain.ensure_ghidra_and_jdk(log)
     log('Xcode, CMake, Python packages, Ghidra 12.1.4 and JDK 21 ready')
-    step(2, 'Extracting the game IPA')
-    WORK.mkdir(parents=True, exist_ok=True)
-    app, armv7 = extract(args.ipa.resolve())
-    step(3, 'Building game resources')
-    data = resources.build(app, WORK / 'Asphalt6Data', log)
-    step(4, 'Translating the game program (about 20 minutes)')
+    as6build = ROOT / 'scripts/as6build'
+
+    ipa = args.ipa.resolve()
+    armv7 = WORK / 'program.armv7'
+    extracted = Stage(2, 'Extracting the game IPA', 'IPA ' + sha256(ipa), SUPPORTED_VERSION, ARMV7_SHA256)
+    if not extracted.done(armv7, WORK / 'ipa/Payload'):
+        WORK.mkdir(parents=True, exist_ok=True)
+        extract(ipa)
+        extracted.finish()
+    app = next((WORK / 'ipa/Payload').glob('*.app'))
+
+    data = WORK / 'Asphalt6Data' / resources.MANIFEST_NAME
+    built = Stage(3, 'Building game resources', extracted.fingerprint,
+                  tree_digest(as6build / 'resources.py', as6build / 'store_removal.py', as6build / 'data'))
+    if not built.done(data):
+        data = resources.build(app, WORK / 'Asphalt6Data', log)
+        built.finish()
+
     generated = ROOT / 'build/generated'
-    codegen.generate(armv7, app, generated, WORK, ghidra=ghidra, jdk=jdk, log=log)
+    translated = Stage(4, 'Translating the game program (about 20 minutes)', extracted.fingerprint,
+                       tree_digest(as6build))
+    if not translated.done(generated / 'aot', generated / 'host'):
+        codegen.generate(armv7, app, generated, WORK, ghidra=ghidra, jdk=jdk, log=log)
+        translated.finish()
+
+    # Always handed to CMake: it rebuilds only what changed (compat layer edits
+    # included), and finishes quickly when nothing did.
     step(5, 'Compiling AOT (about 1-2 hours)')
     build = compile_ios(generated, args.jobs, debug=args.debug)
-    step(6, 'Packaging')
-    DIST.mkdir(exist_ok=True)
-    package.package(build, app, data, DIST, log=log)
-    zip_resources(WORK / 'Asphalt6Data', DIST / 'Asphalt6Data.zip')
+
+    outputs = [DIST / 'Asphalt6ARM64.ipa', DIST / 'Asphalt6Data.zip']
     if artwork.SOURCE.is_dir():
-        artwork.package(DIST / 'NativeArtwork.zip', log=log)
-    else:
-        log('artwork/ not found, NativeArtwork.zip skipped')
+        outputs.append(DIST / 'NativeArtwork.zip')
+    packaged = Stage(6, 'Packaging', extracted.fingerprint, built.fingerprint, library_digest(build),
+                     tree_digest(as6build / 'package.py', as6build / 'artwork.py'),
+                     tree_digest(artwork.SOURCE) if artwork.SOURCE.is_dir() else 'no artwork')
+    if not packaged.done(*outputs):
+        DIST.mkdir(exist_ok=True)
+        package.package(build, app, data, DIST, log=log)
+        zip_resources(WORK / 'Asphalt6Data', DIST / 'Asphalt6Data.zip')
+        if artwork.SOURCE.is_dir():
+            artwork.package(DIST / 'NativeArtwork.zip', log=log)
+        else:
+            log('artwork/ not found, NativeArtwork.zip skipped')
+        packaged.finish()
     print('Done. Sign and install dist/Asphalt6ARM64.ipa with SideStore, then copy dist/Asphalt6Data.zip '
           '(and optionally dist/NativeArtwork.zip) into the app\'s folder in Files.', flush=True)
 

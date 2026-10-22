@@ -121,7 +121,11 @@ The script runs in 6 steps. Every step checks its result against fixed SHA-256 h
 
 Every step shows its progress: downloading, export, conversion, register promotion and compilation have progress bars, and phases that cannot estimate progress (such as the Ghidra analysis) show the elapsed time. Ghidra's output is kept in `build/work/pcode/`, and the full compiler output in `build/compile.log`.
 
-Only one `buildGame.py` can run per checkout at a time; starting another one reports that a build is already running and exits. Running it again after a finished build reuses the toolchain and analysis results and recompiles only the source files whose contents changed, so a run without changes finishes in a few minutes.
+Only one `buildGame.py` can run per checkout at a time; starting another one reports that a build is already running and exits. After each step the script records a fingerprint of that step's inputs in `build/.finish-stepN` (hashes of the IPA and the relevant scripts and data, including the previous step's fingerprint). When run again:
+
+- Steps 2, 3, 4 and 6 are skipped (shown as `up to date, skipped`) when the fingerprint matches and the outputs still exist; if the IPA or the relevant scripts changed, the step is redone automatically, and so are the steps after it;
+- Step 5 is always handed to CMake's incremental build, which recompiles only the files that changed (compatibility layer edits included) and finishes quickly when nothing did;
+- A step that fails leaves no marker, so the next run resumes from that step.
 
 Outputs are written to `dist/`:
 
