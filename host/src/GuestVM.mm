@@ -948,8 +948,11 @@ GuestVM *GuestVMShared(void) { return sharedVM; }
 void GuestVMSetShared(GuestVM *vm) { sharedVM=vm; }
 
 static void Boundary(GuestVM *vm) {
-    vm->_recentPC[vm->_recentCount++%64]=GuestPC(vm);
-    recentSP[recentSPCount++%64]=GuestSP(vm);
+    // Only GuestEmulate calls this, with the VM lock held and Core loaded.
+    const auto &state=vm->_core->state();
+    uint32_t pc=0,sp=0;state.get_register(15,pc);state.get_register(13,sp);
+    vm->_recentPC[vm->_recentCount++%64]=pc;
+    recentSP[recentSPCount++%64]=sp;
 }
 static void CaptureNativeFailure(GuestVM *vm,as6aot::Status result) {
     if (result==as6aot::BudgetExhausted || vm->_firstNativeFailure) return;
@@ -1427,13 +1430,22 @@ GuestExecutionResult GuestEmulate(GuestVM *vm,gva_t begin,gva_t until,uint64_t m
         // Original in-image weak definitions take precedence over host APIs.
         // This is only an immutable identity redirect into already compiled
         // native code; arguments, LR, flags and the remaining budget survive.
-        if (const auto definition=core.native_definition(bridge->symbol)) {
-            GuestSetPC(vm,definition);
+        if (const auto definition=core.bridge_definition(bridge)) {
+            // GuestSetPC without re-checking the lock this frame already holds.
+            state.set_cpsr((state.cpsr()&~0x20u)|((definition&1u)<<5));
+            state.set_register(15,definition&~1u);
             continue;
         }
         ++vm->_calls;
-        HLEImpl impl=HLELookup(bridge->symbol);
-        if (!impl&&!bridge->requires_registered) { impl=HLEAutoImpl(bridge->symbol); if (impl) ++vm->_autoCalls; }
+        auto &slot=core.bridge_slot(bridge);
+        const auto generation=HLEGeneration()+1;
+        if(slot.impl_generation!=generation){
+            HLEImpl found=HLELookup(bridge->symbol);bool automatic=false;
+            if (!found&&!bridge->requires_registered) { found=HLEAutoImpl(bridge->symbol); automatic=found!=nullptr; }
+            slot.impl=(void *)found;slot.auto_impl=automatic;slot.impl_generation=found?generation:0;
+        }
+        HLEImpl impl=(HLEImpl)slot.impl;
+        if (impl&&slot.auto_impl) ++vm->_autoCalls;
         if (!impl) {
             ctx.status=as6aot::UnresolvedTarget;
             CaptureNativeFailure(vm,ctx.status);
@@ -1447,13 +1459,18 @@ GuestExecutionResult GuestEmulate(GuestVM *vm,gva_t begin,gva_t until,uint64_t m
         if(vm->_halt)return Finish(vm,GuestExecutionHalted);
         // HLE calls happen only after the C++ NativeProgram frame is gone.
         // Preserve nesting/current import identity around callbacks.
-        const std::string previous=HLECurrentSymbol()?HLECurrentSymbol():"";
+        // Saved per nesting level in reused buffers: no allocation per call.
+        static thread_local std::vector<std::string> savedSymbols;
+        static thread_local std::size_t savedDepth=0;
+        const std::size_t level=savedDepth++;
+        if(savedSymbols.size()<=level)savedSymbols.emplace_back();
+        savedSymbols[level].assign(HLECurrentSymbol()?HLECurrentSymbol():"");
         HLESetCurrentSymbol(bridge->symbol);
         @try { HLEPosixPoll(vm); if (!vm->_fault) impl(vm); }
         @catch (NSException *exception) {
             GuestTrace(vm,@"[native] bridge %s raised %@",bridge->symbol,exception.name);
             vm->_fault=true;
-        } @finally { HLESetCurrentSymbol(previous.c_str()); }
+        } @finally { HLESetCurrentSymbol(savedSymbols[level].c_str()); --savedDepth; }
         if (vm->_fault) return Finish(vm,GuestExecutionInvalidState);
         if (vm->_halt) return Finish(vm,GuestExecutionHalted);
         if (GuestAudioProducerWasCancelled(vm)) return Finish(vm,GuestExecutionCancelled);

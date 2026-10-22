@@ -9,6 +9,7 @@
 #import <sys/signal.h>
 #import <dispatch/dispatch.h>
 #import <unistd.h>
+#import <pthread.h>
 #import <fcntl.h>
 #import <errno.h>
 #import <limits.h>
@@ -171,7 +172,7 @@ static GuestPosixState &PosixState(GuestVM *vm) {
 // Public import-boundary hook. A pending completion can interrupt a guest
 // startup loop even while the host main run loop has not regained control.
 extern "C" void HLEPosixPoll(GuestVM *vm) {
-    if (!vm || g_deliveringPosixSignal || ![NSThread isMainThread]) return;
+    if (!vm || g_deliveringPosixSignal || !g_posixReady.load(std::memory_order_relaxed) || !pthread_main_np()) return;
     if (!g_posixReady.exchange(false, std::memory_order_acquire)) return;
     GuestLock(vm);
     auto &state = PosixState(vm);

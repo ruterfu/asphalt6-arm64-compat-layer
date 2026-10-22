@@ -6,7 +6,7 @@ namespace as6_nav_vm {namespace {
 const as6aot::NativeProgram *baseProgram=nullptr;
 std::atomic<const as6native::Provider *> authorized{nullptr};
 // Cache the final immutable resolution, including navigation overrides and holes.
-// This replaces the inner cache; there is still only one 64 KiB cache per thread.
+// This replaces the inner cache; there is still only one 256 KiB cache per thread.
 as6aot::NativeFunction resolve(std::uint32_t pc, bool thumb) {
     const auto key = (std::uint64_t(pc) << 1) | std::uint64_t(thumb);
     if (key >= 0x3054c0 && key <= 0x3064e0)

@@ -19,6 +19,8 @@ typedef void (*HLEImpl)(GuestVM *vm);
 void HLERegister(const char *symbol, HLEImpl impl);
 // NULL when the original binary imports a symbol the host has not implemented.
 HLEImpl HLELookup(const char *symbol);
+// Changes whenever HLERegister runs, so callers may cache HLELookup results.
+uint64_t HLEGeneration(void);
 // When an import has no hand-written implementation, forward it to the host
 // dylib that exports the same symbol (NULL when the host has no such symbol).
 HLEImpl HLEAutoImpl(const char *symbol);

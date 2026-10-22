@@ -1,6 +1,7 @@
 #import "HLE.h"
 
 #import <os/lock.h>
+#import <atomic>
 #import <string.h>
 #import <string>
 #import <unordered_map>
@@ -11,6 +12,7 @@ static std::unordered_map<std::string, HLEImpl> g_impls;
 static thread_local std::string g_currentSymbol;
 static std::unordered_map<std::string, NSUInteger> g_needed;
 static os_unfair_lock g_lock = OS_UNFAIR_LOCK_INIT;
+static std::atomic<uint64_t> g_generation{0};
 
 void HLESetCurrentSymbol(const char *symbol) {
     g_currentSymbol = symbol ? symbol : "";
@@ -20,8 +22,11 @@ const char *HLECurrentSymbol(void) { return g_currentSymbol.c_str(); }
 void HLERegister(const char *symbol, HLEImpl impl) {
     os_unfair_lock_lock(&g_lock);
     g_impls[symbol] = impl;
+    g_generation.fetch_add(1, std::memory_order_release);
     os_unfair_lock_unlock(&g_lock);
 }
+
+uint64_t HLEGeneration(void) { return g_generation.load(std::memory_order_acquire); }
 
 HLEImpl HLELookup(const char *symbol) {
     os_unfair_lock_lock(&g_lock);

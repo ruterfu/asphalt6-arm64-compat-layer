@@ -38,6 +38,14 @@ class Core {
         }
     };
     std::map<std::string,std::uint32_t,DefinitionNameLess> defined_targets_;
+    struct BridgeSlot {
+        bool definition_resolved = false;
+        std::uint32_t definition = 0;
+        std::uint64_t impl_generation = 0; // HLE registry generation + 1
+        void *impl = nullptr;
+        bool auto_impl = false;
+    };
+    mutable std::vector<BridgeSlot> bridge_slots_;
     bool attempted_=false,prepared_=false,ready_=false,writer_issued_=false;
     bool bind_slot(std::size_t index,std::uint32_t value,std::string &error) {
         if (!prepared_ || ready_ || index>=bound_.size() || bound_[index]) {error="binding writer phase/index/replay violation";return false;}
@@ -154,6 +162,22 @@ public:
         const bool thumb = encoded & 1u;
         return !ObjCMetadataWord(pc) && pc >= 4096 && !(pc & (thumb ? 1u : 3u)) &&
             (provider_.program->lookup(pc, thumb) || bridge(pc, thumb));
+    }
+    // Per-bridge resolutions reused by every later call through the same
+    // import. Guarded by the VM lock like the rest of Core.
+    BridgeSlot &bridge_slot(const Bridge *bridge) const {
+        if (bridge_slots_.size() != provider_.bridge_count) bridge_slots_.assign(provider_.bridge_count, {});
+        return bridge_slots_[std::size_t(bridge - provider_.bridges)];
+    }
+    // native_definition() for a bridge of this provider; immutable once ready.
+    std::uint32_t bridge_definition(const Bridge *bridge) const {
+        if (!ready_) return native_definition(bridge->symbol);
+        auto &slot = bridge_slot(bridge);
+        if (!slot.definition_resolved) {
+            slot.definition = native_definition(bridge->symbol);
+            slot.definition_resolved = true;
+        }
+        return slot.definition;
     }
     std::uint32_t native_definition(const char *symbol) const {
         if (!ready_ || !symbol) return 0;
