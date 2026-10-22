@@ -69,7 +69,7 @@ python3 scripts/buildGame.py /path/to/Asphalt6.ipa
 
 ### 高清背景包（可选）
 
-高清背景包 `NativeArtwork.zip` 单独发布：[下载（Google Drive）](https://drive.google.com/file/d/1o8iHwtRP0q2xYJgAp07VcnXXSXm7BQE5/view?usp=sharing)。把它和资源包放在同一目录，启动时会自动安装，标题、菜单与加载画面改用 16:9 高清背景；没有时使用原版背景。
+高清背景包 `NativeArtwork.zip` 已单独上传到 Google Drive：[点此下载](https://drive.google.com/file/d/1o8iHwtRP0q2xYJgAp07VcnXXSXm7BQE5/view?usp=sharing)。把它和资源包放在同一目录，启动时会自动安装，标题、菜单与加载画面改用 16:9 高清背景；没有时使用原版背景。
 
 高清背景以游戏原版背景为基础，使用 GPT Image 2 重绘为 16:9 画幅。
 
