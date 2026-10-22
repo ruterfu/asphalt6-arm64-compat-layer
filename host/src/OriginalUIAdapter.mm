@@ -81,6 +81,8 @@ struct Movie {
     bool stageWidened=false;
     int onMonitor=-1;
     std::array<Node,4> monitorBackdrops{};
+    Node cupHitArea{"CupList.flip_Main"};
+    bool cupHitAreaWidened=false;
     std::array<unsigned,4> backdropTries{};
     std::array<Node,2> offstage{Node{"confirm_buy"},Node{"update_mc"}};
 };
@@ -569,6 +571,19 @@ void bindUnnamed(GuestVM *vm,Node &n,std::uint32_t object) {
 }
 bool applyNodeStageAffine(GuestVM *vm,State &s,Movie &m,Node &n,const M &stageAffine,unsigned &applied,unsigned &changed,
                           double sx=0,double sy=0,double dx=0,double dy=0);
+// On the widened monitor the multiplayer pages' Back buttons (one authored
+// corner) sit inside the page; bring them to about where the 2D menu Back is
+// drawn, at its size: 141 stage pixels further left and 5 up than the 6.5%
+// shift, at 0.765 about their box centre (measured on a 2.17:1 screen).
+bool monitorBackAffine(GuestVM *vm,State &s,Movie &m,double width,M &out) {
+    for(auto &g:m.groups)for(auto &n:g.nodes){
+        Geometry geo;if(!resolve(vm,s,m,n)||!nodeGeometry(vm,s,n,geo))continue;
+        P c{};for(const auto &q:geo.stage){c.x+=q.x/4;c.y+=q.y/4;}
+        constexpr double f=.765,dx=-141*20,dy=-5*20;
+        out=M{f,0,(1-f)*c.x-.065*width+dx,0,f,(1-f)*c.y+dy};return true;
+    }
+    return false;
+}
 bool applyBack20(GuestVM *vm,State &s,Movie &m,const AS6OriginalUIHostMetrics &host,bool metricsReady) {
     const auto pending=[&](const char *reason){
         if(m.backRejectLogs++<3){char line[256];std::snprintf(line,sizeof(line),"[original-ui-back] pending handler=%#x reason=%s; original Back retained",m.handler,reason);GuestRawLog(line);}
@@ -695,6 +710,22 @@ bool applyPauseButtons(GuestVM *vm,State &s,Movie &m) {
         if(next!=current&&!set(vm,s,n,next))return false;
         n.base=base;n.applied=next;n.shifted=next!=base;n.affineApplied=n.shifted;n.installedAffine=prefix;
     }
+    return !GuestHasStopRequest(vm);
+}
+double officeMonitorWidening();
+// The cup row's flipper selects the cup a drag settles on only when the
+// finger is released over its hit area (flip_Main, authored x 74..574, about
+// between the arrows). Widen it about the stage centre over the visible row:
+// the 650-wide stage, or its wider visible part on the widened monitor.
+bool widenCupHitArea(GuestVM *vm,State &s,Movie &m) {
+    if(m.cupHitAreaWidened||!resolve(vm,s,m,m.cupHitArea))return !GuestHasStopRequest(vm);
+    std::array<float,6> area{};
+    if(!local(vm,m.cupHitArea,area))return !GuestHasStopRequest(vm);
+    const double W=officeMonitorWidening(),visible=W>1?W/1.22:1,factor=1.35*visible,centre=324*20;
+    area[0]=float(area[0]*factor);area[2]=float(centre+(area[2]-centre)*factor);
+    if(!set(vm,s,m.cupHitArea,area))return false;
+    m.cupHitAreaWidened=true;
+    char line[160];std::snprintf(line,sizeof(line),"[career-flip] hit area sx=%.4f tx=%.1f factor=%.3f",area[0],area[2],factor);GuestRawLog(line);
     return !GuestHasStopRequest(vm);
 }
 bool applyCareerStars(GuestVM *vm,State &s,Movie &m,const AS6OriginalUIHostMetrics &,bool) {
@@ -847,8 +878,10 @@ extern "C" bool AS6OriginalUIApply(GuestVM *vm,std::uint32_t handler) {
         for(float f:stage)if(!std::isfinite(f))return false;
         // A widened stage keeps its left edge; the shift is of the authored width.
         const double width=(double(stage[1])-stage[0])/(m->stageWidened?officeMonitorWidening():1);
+        M affine{1,0,-.065*width,0,1,0};
+        if(m->stageWidened&&!monitorBackAffine(vm,s,*m,width,affine))affine=M{1,0,-.065*width,0,1,0};
         unsigned applied=0,changed=0;
-        return applyStageAffine(vm,s,*m,M{1,0,-.065*width,0,1,0},applied,changed)&&!GuestHasStopRequest(vm);
+        return applyStageAffine(vm,s,*m,affine,applied,changed)&&!GuestHasStopRequest(vm);
     }
     if(m->kind==Kind::Paint||m->kind==Kind::Tuning){
         float stage[4]{};
@@ -897,7 +930,7 @@ extern "C" bool AS6OriginalUIApply(GuestVM *vm,std::uint32_t handler) {
     }
     if(m->kind==Kind::Loading)return applyResourceForeground(vm,s,*m,h);
     // Career selection sits on the in-room 3:2 monitor: authored layout.
-    if(m->kind==Kind::CareerSelection)return applyCareerStars(vm,s,*m,h,metricsReady);
+    if(m->kind==Kind::CareerSelection)return widenCupHitArea(vm,s,*m)&&applyCareerStars(vm,s,*m,h,metricsReady);
     return restoreMovie(vm,s,*m);
 
 }
