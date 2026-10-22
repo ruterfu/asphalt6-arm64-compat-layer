@@ -13,6 +13,10 @@ constexpr std::uint32_t Touch = 0x323534u;
 constexpr std::uint32_t Display = 0x32278cu;
 // Real SWFUnLoad entry: every cached character is still owned here.
 constexpr std::uint32_t Unload = 0x563c0u;
+// SceneHelper::RemoveChildNodeType; MenuScene's call (return 17a78c) comes
+// right after the room is loaded and before its static nodes are batched.
+constexpr std::uint32_t RemoveChildNodeType = 0xad838u;
+constexpr std::uint32_t MenuSceneLoadedReturn = 0x17a78cu;
 #if defined(AS6_ORIGINAL_UI_ABSENCE_FIXTURE)
 inline bool isBoundary(std::uint32_t,bool) { return false; }
 inline bool suppressed() { return false; }

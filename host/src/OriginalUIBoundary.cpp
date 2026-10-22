@@ -11,7 +11,7 @@ thread_local const as6aot::Context *resumeContext;
 thread_local std::uint32_t resumePC;
 }
 bool isBoundary(std::uint32_t pc, bool thumb) {
-    return !thumb && (pc == Advance || pc == Touch || pc == Display || pc == Unload);
+    return !thumb && (pc == Advance || pc == Touch || pc == Display || pc == Unload || pc == RemoveChildNodeType);
 }
 bool suppressed() { return depth != 0; }
 Suppress::Suppress() { ++depth; }

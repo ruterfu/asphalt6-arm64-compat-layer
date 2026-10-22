@@ -9,3 +9,4 @@ extern "C" bool AS6OriginalUIBeforeAdvance(GuestVM *,std::uint32_t handler);
 extern "C" bool AS6OriginalUIApply(GuestVM *,std::uint32_t handler);
 extern "C" void AS6OriginalUIForgetVM(GuestVM *);
 extern "C" bool AS6OriginalUIBeforeUnload(GuestVM *);
+extern "C" bool AS6OriginalUIMenuSceneLoaded(GuestVM *,std::uint32_t root);

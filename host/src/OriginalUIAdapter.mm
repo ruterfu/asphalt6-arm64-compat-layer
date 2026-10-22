@@ -77,6 +77,11 @@ struct Movie {
     unsigned selectionRejectLogs=0;
     unsigned backRejectLogs=0;
     bool backReadyLogged=false;
+    bool stageWidened=false;
+    int onMonitor=-1;
+    std::array<Node,4> monitorBackdrops{};
+    std::array<unsigned,4> backdropTries{};
+    std::array<Node,2> offstage{Node{"confirm_buy"},Node{"update_mc"}};
 };
 struct State {
     std::uint32_t scratch=0;
@@ -84,6 +89,9 @@ struct State {
     // stage coordinates normalised to 0..1, so the tuning shop matches it exactly.
     std::array<M,3> summary{};
     bool summaryValid=false;
+    // Office monitor movie definitions and the stage right edge they were widened to.
+    std::map<std::uint32_t,float> widenedStages;
+    std::uint32_t monitorScreen=0;
     std::map<std::uint32_t,Movie> movies;
     unsigned logs=0;
     unsigned metricsRejectLogs=0;
@@ -227,8 +235,10 @@ void discoverRoundButtons(GuestVM *vm,State &s,Movie &m) {
     m.roundButtonsDiscovered=true;
     for(const char *path:{"mega_mc.btn_i","mega_mc.btn_free_view","mega_mc.btn_color","mega_mc.btn_tunning"})
         if(find(vm,s,m.handler,path))m.roundButtons.push_back({{path},0.,RoundButtonScale});
-    // The race button is only made round again.
-    if(find(vm,s,m.handler,"mega_mc.btn_race"))m.roundButtons.push_back({{"mega_mc.btn_race"},0.,1.});
+    // The race button and the garage joystick (centred on its origin) are only
+    // made round again.
+    for(const char *path:{"mega_mc.btn_race","mega_mc.Joystick"})
+        if(find(vm,s,m.handler,path))m.roundButtons.push_back({{path},0.,1.});
 }
 bool identify(GuestVM *vm,State &s,Movie &m) {
     if(m.kind!=Kind::Unknown)return m.kind==Kind::Loading||m.kind==Kind::CareerSelection||m.kind==Kind::Menu||m.kind==Kind::PauseMenu||m.kind==Kind::RaceHud||m.kind==Kind::Multiplayer||m.kind==Kind::Paint||m.kind==Kind::Tuning;
@@ -716,6 +726,94 @@ extern "C" bool AS6OriginalUIBeforeAdvance(GuestVM *vm,std::uint32_t handler) {
     if(m&&!m->hasAdvanced){m->hasAdvanced=true;if(m->kind==Kind::Unknown)m->discoveryDone=false;}
     return !m||restoreMovie(vm,s,*m);
 }
+namespace as6_original_ui { namespace {
+// The office monitor (career, multiplayer, quick race) is widened to fill the
+// screen. The settled camera's view is about 1.2 times the monitor's width in
+// the original 3:2 view, and the wide view adds the screen's horizontal
+// stretch; 1.22 leaves a little for the screen sitting slightly off centre.
+double officeMonitorWidening() {
+    const double stretch=AS6CanvasHorizontalStretch();
+    return std::isfinite(stretch)&&stretch>1.001&&stretch<3?stretch*1.22:1;
+}
+// The monitor movie renders the definition's stage rectangle into the whole
+// bitmap (exact fit). Widening that rectangle makes Flash draw a wider stage
+// at its own ratio. Touch conversion (309080) scales by the stage width but
+// ignores its left edge, so the stage keeps its left edge and the root clip
+// moves right by the added half width instead.
+// Whether this movie renders onto the office monitor screen: SWFManager's
+// controller for the handler, its plane node cache slot (as in map3D), and
+// the screen node recorded when the room was loaded.
+bool onOfficeMonitor(GuestVM *vm,State &s,Movie &m) {
+    if(m.onMonitor>=0)return m.onMonitor==1;
+    if(!s.monitorScreen)return false;
+    if(!m.manager&&(!call(vm,GetSWFManager,{},&m.manager)||!m.manager))return false;
+    for(unsigned i=0;i<6;++i){
+        std::uint32_t index=0,handler=0,slot=0,node=0;
+        if(!word(vm,m.manager+4+4*i,index)||index>=6||!word(vm,m.manager+0x1c+4*index,handler)||handler!=m.handler)continue;
+        if(!word(vm,m.manager+0x34+4*i,slot)||slot>=6||!word(vm,m.manager+0x64+4*slot,node)||!node)return false;
+        m.onMonitor=node==s.monitorScreen;return m.onMonitor==1;
+    }
+    return false;
+}
+// A definition can outlive one movie (or a new one reuse its address), so the
+// stage is widened only while it still has a width other than the recorded
+// one, and every movie instance moves its own root once.
+bool widenMonitorStage(GuestVM *vm,State &s,Movie &m) {
+    const double W=officeMonitorWidening();
+    // Clips waiting right of the stage, where the widened stage would show
+    // them: the store's purchase confirmation (career; the store is disabled)
+    // and the game update prompt (multiplayer).
+    for(auto &node:m.offstage)if(W>1&&resolve(vm,s,m,node)) {
+        std::uint8_t visible=0;
+        if(!read(vm,node.object+0x9bu,&visible,1))return false;
+        const std::uint8_t hidden=0;
+        if(visible&&!GuestWrite(vm,node.object+0x9bu,&hidden,1))return false;
+    }
+    // Each page's full-stage backdrop (unnamed, depth 1) is widened about the
+    // authored stage centre, expressed in its parent clip, by the screen's
+    // stretch: that covers the visible part of the stage, and the background
+    // art (HD pack) is already baked squeezed to the screen's ratio.
+    const double stretch=AS6CanvasHorizontalStretch(),B=std::isfinite(stretch)&&stretch>1.001&&stretch<3?stretch:1;
+    struct Backdrop { const char *parent,*first,*second;int offset; };
+    static const Backdrop backdrops[4]={
+        {"_root","CupList","selection_focus",-3},                                       // career
+        {"menu_track_select","menu_track_select.CupList","menu_track_select.my_focus",-1}, // quick race tracks
+        {"menu_race_type","menu_race_type.btn_collector","menu_race_type.btn_last_man_standing",-1}, // race types
+        {"_root","multiplayer_menu_stack","menu_21",-1}};                               // multiplayer
+    for(unsigned i=0;W>1&&m.stageWidened&&i<4;++i) {
+        auto &node=m.monitorBackdrops[i];
+        if(node.object||m.backdropTries[i]>=300)continue;
+        ++m.backdropTries[i];
+        const auto &b=backdrops[i];
+        bindUnnamed(vm,node,displayListEntry(vm,s,m,b.parent,b.first,b.second,b.offset));
+        std::array<float,6> backdrop{};float stage[2]{},parent[6]{1,0,0,0,1,0};std::uint32_t parentMatrix=0;
+        const std::uint32_t parentClip=std::strcmp(b.parent,"_root")?find(vm,s,m.handler,b.parent):0;
+        if(!node.object||!local(vm,node,backdrop)||!read(vm,m.definition+0xb4,stage,8)||
+           (parentClip&&(!word(vm,parentClip+0x4c,parentMatrix)||!read(vm,parentMatrix,parent,24)||parent[0]==0))){node.object=0;continue;}
+        const double centre=(stage[0]+.5*(double(stage[1])-stage[0])/W-parent[2])/parent[0];
+        backdrop[0]=float(backdrop[0]*B);backdrop[2]=float(centre+(backdrop[2]-centre)*B);
+        if(!set(vm,s,node,backdrop))return false;
+        char line[200];std::snprintf(line,sizeof(line),"[office-monitor] backdrop %s=%#x centre=%.1f sx=%.4f tx=%.1f",b.parent,node.object,centre,backdrop[0],backdrop[2]);GuestRawLog(line);
+    }
+    if(m.stageWidened)return true;
+    float stage[4]{},local[6]{};std::uint32_t matrixPointer=0;
+    if(!read(vm,m.definition+0xb4,stage,sizeof(stage)))return false;
+    for(float f:stage)if(!std::isfinite(f))return true;
+    const std::uint32_t root=find(vm,s,m.handler,"_root");
+    if(W<=1||stage[1]<=stage[0]||!root||!word(vm,root+0x4c,matrixPointer)||!read(vm,matrixPointer,local,24))return true;
+    const auto known=s.widenedStages.find(m.definition);
+    const bool already=known!=s.widenedStages.end()&&known->second==stage[1];
+    const double width=already?(double(stage[1])-stage[0])/W:double(stage[1])-stage[0];
+    const float wide[2]={stage[0],float(stage[0]+width*W)};
+    if(!already&&!GuestWrite(vm,m.definition+0xb4,wide,sizeof(wide)))return false;
+    s.widenedStages[m.definition]=wide[1];m.stageWidened=true;
+    local[2]=float(local[2]+.5*width*(W-1));
+    if(!writeScratch(vm,s,512,local,24)||!call(vm,SetMatrix,{root,s.scratch+512}))return false;
+    char line[256];std::snprintf(line,sizeof(line),"[office-monitor] stage definition=%#x x=(%.1f %.1f) -> (%.1f %.1f)%s root=%#x tx=%.1f",
+        m.definition,stage[0],stage[1],wide[0],wide[1],already?" (already)":"",root,local[2]);GuestRawLog(line);
+    return !GuestHasStopRequest(vm);
+}
+}}
 extern "C" bool AS6OriginalUIApply(GuestVM *vm,std::uint32_t handler) {
     using namespace as6_original_ui;
     if(!vm||!GuestDiagnosticSnapshotLockHeld(vm))return false;
@@ -729,8 +827,9 @@ extern "C" bool AS6OriginalUIApply(GuestVM *vm,std::uint32_t handler) {
     // Reassert at Advance/Display/Touch boundaries, including after an AS2
     // timeline restores visibility. A hidden button cannot take input.
     if(!hideGameloftLive(vm,s,*m))return false;
-    if(!identify(vm,s,*m))return !GuestHasStopRequest(vm);
     if(!s.scratch)s.scratch=GuestAlloc(vm,4096);if(!s.scratch)return false;
+    if(onOfficeMonitor(vm,s,*m)&&!widenMonitorStage(vm,s,*m))return false;
+    if(!identify(vm,s,*m))return !GuestHasStopRequest(vm);
     float scale=0;std::uint32_t driver=0;
     scaleAndDriver(vm,scale,driver); // Diagnostic only: layout uses native ratios and authored stage.
     if(!m->identifiedLog){m->identifiedLog=true;GuestTrace(vm,@"[original-ui] identified kind=%u handler=%#x root=%#x definition=%#x Host=(%.1f %.1f) safe=(%.4f %.4f %.4f %.4f) view=(%.1f %.1f) scale=%.2f driver=%#x revision=%llu",
@@ -742,8 +841,10 @@ extern "C" bool AS6OriginalUIApply(GuestVM *vm,std::uint32_t handler) {
         float stage[4]{};
         if(!read(vm,m->definition+0xb4,stage,sizeof(stage)))return false;
         for(float f:stage)if(!std::isfinite(f))return false;
+        // A widened stage keeps its left edge; the shift is of the authored width.
+        const double width=(double(stage[1])-stage[0])/(m->stageWidened?officeMonitorWidening():1);
         unsigned applied=0,changed=0;
-        return applyStageAffine(vm,s,*m,M{1,0,-.065*(double(stage[1])-stage[0]),0,1,0},applied,changed)&&!GuestHasStopRequest(vm);
+        return applyStageAffine(vm,s,*m,M{1,0,-.065*width,0,1,0},applied,changed)&&!GuestHasStopRequest(vm);
     }
     if(m->kind==Kind::Paint||m->kind==Kind::Tuning){
         float stage[4]{};
@@ -795,6 +896,63 @@ extern "C" bool AS6OriginalUIApply(GuestVM *vm,std::uint32_t handler) {
     if(m->kind==Kind::CareerSelection)return applyCareerStars(vm,s,*m,h,metricsReady);
     return restoreMovie(vm,s,*m);
 
+}
+namespace as6_original_ui { namespace {
+// Batching reads each node's absolute matrix (+0x10, axes then translation),
+// already computed at load, so the subtree's absolute matrices are widened
+// too: x and z of every axis by W, and the translation about the centre.
+bool widenAbsolute(GuestVM *vm,std::uint32_t node,double W,const double *centre,int depth) {
+    float a[16]{};
+    if(!read(vm,node+0x10,a,64))return false;
+    for(int axis=0;axis<3;++axis){a[axis*4]=float(a[axis*4]*W);a[axis*4+2]=float(a[axis*4+2]*W);}
+    a[12]=float(centre[0]+(a[12]-centre[0])*W);a[14]=float(centre[2]+(a[14]-centre[2])*W);
+    if(!GuestWrite(vm,node+0x10,a,64))return false;
+    const std::uint32_t head=node+0xe0;std::uint32_t link=0;unsigned count=0;
+    if(depth>4||!word(vm,head,link))return true;
+    while(link&&link!=head&&count++<64){
+        if(!widenAbsolute(vm,link-4,W,centre,depth+1))return false;
+        if(!word(vm,link,link))break;
+    }
+    return true;
+}
+}}
+// The menu room as loaded, before MenuScene batches every child without
+// "_node" in its name into static geometry: the office monitor's screen,
+// bezel (Object113) and housing (Object114) are still separate nodes here.
+// Scale them together by W horizontally about the screen centre. The screen
+// has no rotation (its quad is authored turned 30 degrees), so its scale is
+// (W,1,W); the bezel and housing map local z to world -Y, so theirs gain W
+// on x and y. Either way the monitor widens along its own horizontal axis.
+extern "C" bool AS6OriginalUIMenuSceneLoaded(GuestVM *vm,std::uint32_t root) {
+    using namespace as6_original_ui;
+    std::lock_guard<std::recursive_mutex>guard(statesMutex);auto &s=states[vm];
+    const double W=officeMonitorWidening();
+    if(W<=1||!root)return true;
+    struct Part { const char *name;std::array<double,3> gain; };
+    static const Part parts[]={{"MenuOfficeDesk_Screen_node",{W,1,W}},{"Object113",{W,W,1}},{"Object114",{W,W,1}}};
+    const double centre[3]={-608.896,119.565,1036.58};
+    const std::uint32_t head=root+0xe0;std::uint32_t link=0;unsigned count=0,widened=0;
+    if(!word(vm,head,link))return true;
+    while(link&&link!=head&&count++<1000){
+        const std::uint32_t node=link-4;
+        if(!word(vm,link,link))break;
+        std::uint32_t vt=0,getName=0,namePointer=0,setScale=0,setPosition=0;char name[32]{};
+        if(!word(vm,node,vt)||!word(vm,vt+0x24,getName)||!call(vm,getName,{node},&namePointer)||!namePointer||!read(vm,namePointer,name,sizeof(name)-1))continue;
+        const Part *part=nullptr;for(const auto &p:parts)if(!std::strcmp(name,p.name))part=&p;
+        if(part==parts)s.monitorScreen=node;
+        float position[3]{},scale[3]{};
+        if(!part||!word(vm,vt+0x94,setScale)||!word(vm,vt+0xa4,setPosition)||!read(vm,node+0x98,position,12)||!read(vm,node+0xb4,scale,12))continue;
+        const float before[3]={position[0],position[2],scale[0]};
+        if(!widenAbsolute(vm,node,W,centre,0))return false;
+        for(int i=0;i<3;++i)scale[i]=float(scale[i]*part->gain[i]);
+        position[0]=float(centre[0]+(position[0]-centre[0])*W);position[2]=float(centre[2]+(position[2]-centre[2])*W);
+        if(!writeScratch(vm,s,840,scale,12)||!writeScratch(vm,s,860,position,12)||
+           !call(vm,setScale,{node,s.scratch+840})||!call(vm,setPosition,{node,s.scratch+860}))return false;
+        ++widened;char line[256];std::snprintf(line,sizeof(line),"[office-monitor] %s x=%.2f z=%.2f sx=%.4f -> pos=(%.2f %.2f %.2f) scale=(%.4f %.4f %.4f)",
+            name,before[0],before[1],before[2],position[0],position[1],position[2],scale[0],scale[1],scale[2]);GuestRawLog(line);
+    }
+    char line[128];std::snprintf(line,sizeof(line),"[office-monitor] room=%#x children=%u widened=%u W=%.4f",root,count,widened,W);GuestRawLog(line);
+    return !GuestHasStopRequest(vm);
 }
 extern "C" bool AS6OriginalUIBeforeUnload(GuestVM *vm) {
     using namespace as6_original_ui;

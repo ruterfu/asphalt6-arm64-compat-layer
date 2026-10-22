@@ -49,6 +49,7 @@ extern "C" void AS6NativeTrailObserveWritesForFixture(void *,const as6hostdata::
 static inline bool AS6OriginalUIBeforeAdvance(GuestVM *,std::uint32_t) { return true; }
 static inline bool AS6OriginalUIApply(GuestVM *,std::uint32_t) { return true; }
 static inline bool AS6OriginalUIBeforeUnload(GuestVM *) { return true; }
+static inline bool AS6OriginalUIMenuSceneLoaded(GuestVM *,std::uint32_t) { return true; }
 static inline void AS6OriginalUIForgetVM(GuestVM *) {}
 #else
 #include "OriginalUIAdapter.hpp"
@@ -1409,6 +1410,9 @@ GuestExecutionResult GuestEmulate(GuestVM *vm,gva_t begin,gva_t until,uint64_t m
                 as6_original_ui::Suppress suppress;
                 if(originalPC==as6_original_ui::Unload) {
                     if(AS6OriginalUIBeforeUnload)ok=AS6OriginalUIBeforeUnload(vm);
+                } else if(originalPC==as6_original_ui::RemoveChildNodeType) {
+                    if(GuestLR(vm)==as6_original_ui::MenuSceneLoadedReturn&&AS6OriginalUIMenuSceneLoaded)
+                        ok=AS6OriginalUIMenuSceneLoaded(vm,handler);
                 } else if(AS6OriginalUIApply)ok=AS6OriginalUIApply(vm,handler);
             }
             if(!ok||vm->_fault)return Finish(vm,GuestExecutionInvalidState);
