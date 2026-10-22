@@ -76,7 +76,8 @@ def export_pcode(armv7, work, ghidra, jdk, log):
     image = out / 'Asphalt6.armv7'
     shutil.copyfile(armv7, image)
     env = dict(os.environ, JAVA_HOME=str(jdk), _JAVA_HOME=str(jdk), TMPDIR=str(out / 'tmp'))
-    log('codegen: analysing the program with Ghidra (one-time, about 10 minutes)')
+    # Ghidra reports no progress while analysing, only while exporting.
+    analysing = Timer('analysing with Ghidra (one-time, about 10 minutes)')
     bar = None
 
     def export_progress(line):
@@ -86,7 +87,8 @@ def export_pcode(armv7, work, ghidra, jdk, log):
             return
         from tqdm import tqdm
         if bar is None:
-            bar = tqdm(total=int(found.group(2)), unit='insn', unit_scale=True, desc='      exporting', smoothing=0.05)
+            analysing.close()
+            bar = tqdm(total=int(found.group(2)), unit='insn', unit_scale=True, desc=INDENT + 'exporting', smoothing=0.05)
         bar.update(int(found.group(1)) - bar.n)
     try:
         run_logged([str(ghidra / 'support/analyzeHeadless'), str(out / 'project'), 'as6', '-import', str(image),
@@ -96,6 +98,7 @@ def export_pcode(armv7, work, ghidra, jdk, log):
                     '-log', str(out / 'ghidra.log'), '-scriptlog', str(out / 'script.log')],
                    out / 'analyze.out', env, export_progress)
     finally:
+        analysing.close()
         if bar is not None:
             bar.close()
     partial = out / 'instructions.partial.jsonl.gz'
@@ -125,6 +128,36 @@ def headless(ghidra, jdk, project, script_dir, script, arguments, log_dir):
                log_dir / (script + '.out'), env)
 
 
+INDENT = '      '
+
+
+class Timer:
+    """Elapsed-time line for a step that reports no progress of its own."""
+
+    def __init__(self, description):
+        import threading
+        from tqdm import tqdm
+        self.bar = tqdm(total=None, desc=INDENT + description, bar_format='{desc}: {elapsed}')
+        self.done = threading.Event()
+        self.thread = threading.Thread(target=self.tick, daemon=True)
+        self.thread.start()
+
+    def tick(self):
+        while not self.done.wait(1):
+            self.bar.refresh()
+
+    def close(self):
+        if not self.done.is_set():
+            self.done.set()
+            self.thread.join()
+            self.bar.close()
+
+
+def steps(items, description, unit):
+    from tqdm import tqdm
+    return tqdm(items, desc=INDENT + description, unit=unit, smoothing=0)
+
+
 def run_logged(command, output, env, on_line=None):
     """Run a tool with its console output kept in `output` instead of the terminal."""
     tail = []
@@ -152,7 +185,7 @@ def recover_supplemental(stream, work, ghidra, jdk, log):
                                         image_path=str(work / 'pcode/Asphalt6.armv7'), functions=[])))
     records = []
     paths = []
-    for script, addresses, count, digest in RECOVERIES:
+    for script, addresses, count, digest in steps(RECOVERIES, 'recovering supplemental code', 'part'):
         target = out / (script[:-5] + '.json')
         if not target.is_file():
             headless(ghidra, jdk, work / 'pcode/project', PIPELINE / 'recover', script,
@@ -197,7 +230,7 @@ def export_fragments(stream, work, ghidra, jdk, log):
     out = work / 'fragments'
     out.mkdir(parents=True, exist_ok=True)
     template = work / 'recovered/layout-template.json'
-    for folder in sorted((PIPELINE / 'fragments').iterdir()):
+    for folder in steps(sorted((PIPELINE / 'fragments').iterdir()), 'exporting code fragments', 'fragment'):
         target = out / (folder.name + '.json')
         if target.is_file():
             continue
@@ -212,8 +245,12 @@ def export_fragments(stream, work, ghidra, jdk, log):
 
 def lower_fragments(exports, target, work, log):
     expected = json.loads((HERE / 'data/fragments-sha256.json').read_text())
-    subprocess.run([sys.executable, '-I', str(HERE / 'fragments.py'), str(exports), str(target),
-                    str(work / 'fragment-tools')], check=True, stdout=subprocess.DEVNULL)
+    timer = Timer('translating code fragments')
+    try:
+        subprocess.run([sys.executable, '-I', str(HERE / 'fragments.py'), str(exports), str(target),
+                        str(work / 'fragment-tools')], check=True, stdout=subprocess.DEVNULL)
+    finally:
+        timer.close()
     wrong = sorted(n for n, h in expected.items() if not (target / n).is_file() or sha256(target / n) != h)
     if wrong:
         raise SystemExit('fragment modules differ from the reference: %s' % ', '.join(wrong[:5]))
