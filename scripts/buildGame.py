@@ -135,8 +135,6 @@ def main():
                         help='parallel compile jobs (default: half the CPU cores)')
     parser.add_argument('--debug', action='store_true',
                         help='compile with debug info (-g) for crash logs and profiling; build/ios grows to ~18 GB')
-    parser.add_argument('--no-promote', action='store_true',
-                        help='compile the translated modules without block-structured register promotion')
     args = parser.parse_args()
     if not args.ipa.is_file():
         parser.error('IPA not found: %s' % args.ipa)
@@ -160,7 +158,7 @@ def main():
     data = resources.build(app, WORK / 'Asphalt6Data', log)
     step(4, 'Translating the game program (about 20 minutes)')
     generated = ROOT / 'build/generated'
-    codegen.generate(armv7, app, generated, WORK, ghidra=ghidra, jdk=jdk, promote=not args.no_promote, log=log)
+    codegen.generate(armv7, app, generated, WORK, ghidra=ghidra, jdk=jdk, log=log)
     step(5, 'Compiling AOT (about 1-2 hours)')
     build = compile_ios(generated, args.jobs, debug=args.debug)
     step(6, 'Packaging')

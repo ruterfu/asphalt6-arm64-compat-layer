@@ -307,17 +307,12 @@ def hook_modules(reference, target, log):
     log('codegen: hooked modules written')
 
 
-def generate(armv7, app, generated, work, ghidra, jdk, promote=True, log=print):
+def generate(armv7, app, generated, work, ghidra, jdk, log=print):
     stream = export_pcode(armv7, work, ghidra, jdk, log)
     supplemental = recover_supplemental(stream, work, ghidra, jdk, log)
     reference = work / 'aot'
     lower_stream(stream, armv7, supplemental, reference, log)
-    if promote:
-        promote_modules(reference, generated / 'aot', log)
-    else:
-        if (generated / 'aot').exists():
-            shutil.rmtree(generated / 'aot')
-        shutil.copytree(reference, generated / 'aot')
+    promote_modules(reference, generated / 'aot', log)
     hook_modules(reference, generated / 'host', log)
     lower_fragments(export_fragments(stream, work, ghidra, jdk, log), generated / 'host', work, log)
     write_data_bundle(armv7, generated / 'host', log)
