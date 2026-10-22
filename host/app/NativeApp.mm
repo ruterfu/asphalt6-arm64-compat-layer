@@ -280,8 +280,12 @@ static BOOL BootNativeGame(void) {
             self.checking=NO;
             if(!ready){
                 runStage=@"waiting-for-resources";runFailure=error.localizedDescription;SaveRunState();
+                // Without a resource folder the cause is simply "not imported";
+                // otherwise show what the check actually found.
+                const BOOL imported=[NSFileManager.defaultManager fileExistsAtPath:AS6ExpectedResourceRootPath()];
                 NSString *reason=damagedData?@"资源包 Asphalt6Data.zip 损坏，请先导入新资源包。":
-                    installedData?@"资源包 Asphalt6Data.zip 内容不完整或版本不符，请先导入新资源包。":@"请先导入游戏资源。";
+                    installedData?@"资源包 Asphalt6Data.zip 内容不完整或版本不符，请先导入新资源包。":
+                    imported&&error.localizedDescription?error.localizedDescription:@"请先导入游戏资源。";
                 NSString *app=NSBundle.mainBundle.infoDictionary[@"CFBundleDisplayName"]?:@"本应用";
                 self.status.text=[NSString stringWithFormat:@"%@\n\n把 Asphalt6Data.zip 放入：文件 App → 我的 iPhone → %@\n返回后点击“重新检测”。",reason,app];
                 self.retry.hidden=NO;self.retry.enabled=YES;return;

@@ -374,7 +374,6 @@ uint32_t HLEDataValue(GuestVM *vm, const char *symbol, uint32_t slotAddr) {
             return GuestObjCWrapClass(vm, [AS6RemovedStore class]);
         gva_t guestCls = GuestObjCClassNamed(vm, [NSString stringWithUTF8String:cname]);
         if (guestCls) return guestCls;
-        if (GuestMediaRemovedClass(cname)) return 0;
         Class motion = GuestMotionSubstituteClass ? GuestMotionSubstituteClass(cname) : Nil;
         if (motion) return GuestObjCWrapClass(vm, motion);
         Class sub = GuestMediaSubstituteClass(cname);
@@ -391,7 +390,6 @@ uint32_t HLEDataValue(GuestVM *vm, const char *symbol, uint32_t slotAddr) {
     if (strncmp(symbol, "_OBJC_METACLASS_$_", 18) == 0) {
         Class motion = GuestMotionSubstituteClass ? GuestMotionSubstituteClass(symbol + 18) : Nil;
         if (motion) return GuestObjCWrapClass(vm, object_getClass(motion));
-        if (GuestMediaRemovedClass(symbol + 18)) return 0;
         Class substitute = GuestMediaSubstituteClass(symbol + 18);
         Class cls = substitute ? object_getClass(substitute) : objc_getMetaClass(symbol + 18);
         return cls ? GuestObjCWrapClass(vm, cls) : 0;

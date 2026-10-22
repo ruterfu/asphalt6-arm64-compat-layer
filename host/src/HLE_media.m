@@ -380,8 +380,26 @@ static UIWindow *MoviePresentationWindow(void) {
 - (void)pause { [_player pause]; }
 @end
 
+// Stand-in for the removed MediaPlayer music-library classes: any class or
+// instance message answers nil/0, which the game reads as "no system music".
+@interface AS6RemovedMusicLibrary : NSObject
+@end
+@implementation AS6RemovedMusicLibrary
+static id RemovedMusicLibraryNil(id self, SEL _cmd, ...) { return nil; }
++ (BOOL)resolveClassMethod:(SEL)sel {
+    return class_addMethod(object_getClass(self), sel, (IMP)RemovedMusicLibraryNil, "@@:");
+}
++ (BOOL)resolveInstanceMethod:(SEL)sel {
+    return class_addMethod(self, sel, (IMP)RemovedMusicLibraryNil, "@@:");
+}
++ (id)alloc { return nil; }
++ (id)allocWithZone:(NSZone *)zone { (void)zone; return nil; }
++ (id)new { return nil; }
+@end
+
 Class GuestMediaSubstituteClass(const char *className) {
     if (!className) return nil;
+    if (GuestMediaRemovedClass(className)) return [AS6RemovedMusicLibrary class];
     if (strcmp(className, "MPMoviePlayerController") == 0) return [PortMoviePlayer class];
     if (strcmp(className, "MPMoviePlayerViewController") == 0)
         return [PortMoviePlayerViewController class];
