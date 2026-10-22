@@ -116,7 +116,7 @@ The script runs in 6 steps. Every step checks its result against fixed SHA-256 h
 | 2 | `[2/6] Extracting the game IPA` | Unpacks the IPA and confirms it is the supported 1.3.2 release |
 | 3 | `[3/6] Building game resources` | Assembles the game resource folder `Asphalt6Data` from the IPA |
 | 4 | `[4/6] Translating the game program` | Analyzes the game program with Ghidra, converts it into native C++ sources and applies per-basic-block register promotion; output goes to `build/generated/` (about 20 minutes) |
-| 5 | `[5/6] Compiling AOT` | Compiles the iOS static libraries with CMake (about 1.5–2.5 hours) |
+| 5 | `[5/6] Compiling AOT (about 1-2 hours)` | Compiles the iOS static libraries with CMake (about 1–2 hours) |
 | 6 | `[6/6] Packaging` | Links and writes the unsigned app package, and packs the resources |
 
 Downloading, analysis export, conversion, register promotion and compilation all show progress bars. Ghidra's output is kept in `build/work/pcode/`, and the full compiler output in `build/compile.log`.
