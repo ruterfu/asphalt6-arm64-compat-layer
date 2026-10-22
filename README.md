@@ -86,7 +86,7 @@ python3 scripts/buildGame.py /path/to/Asphalt6.ipa
 
 - `Asphalt6ARM64.ipa`：未签名的 App，用 SideStore、AltStore 等工具签名安装；
 - `Asphalt6Data.zip`：游戏资源包；
-- `NativeArtwork.zip`：高清背景包（可选安装），仅当 `artwork/` 中放有高清图片时生成，图片逐个校验后打包。
+- `NativeArtwork.zip`：仅当本地 `artwork/` 目录放有高清图片时生成（供维护者打包发布用）；一般用户直接下载单独发布的高清背景包即可。
 
 可选参数：
 
@@ -116,7 +116,7 @@ python3 scripts/buildGame.py /path/to/Asphalt6.ipa
 
 ## 高清背景包（可选）
 
-把 `NativeArtwork.zip` 放进 App 的文稿目录即可。启动时如果高清背景不齐全，兼容层会自动：
+高清背景包 `NativeArtwork.zip` 与代码分开、单独发布，不包含在本仓库中。下载后放进 App 的文稿目录即可。启动时如果高清背景不齐全，兼容层会自动：
 
 1. 解压缺失的文件到 `Asphalt6Data/NativeArtwork/`；
 2. 逐个校验 SHA-256，只使用校验通过的图片；
@@ -126,7 +126,7 @@ python3 scripts/buildGame.py /path/to/Asphalt6.ipa
 
 没有这个压缩包、或其中某张图缺失或损坏时，对应画面自动使用游戏原版背景，不影响运行。
 
-> 高清背景包中的图片以游戏原版背景为基础，使用 GPT Image 2 重绘成 16:9 画幅，其画面内容与美术设计归 Gameloft 所有。这些图片暂不随仓库发布；兼容层已内置每张图片的校验值，把图片放进 `artwork/` 目录后，构建时会校验并打包为 `NativeArtwork.zip`。
+> 高清背景包中的图片以游戏原版背景为基础，使用 GPT Image 2 重绘成 16:9 画幅，其画面内容与美术设计归 Gameloft 所有。兼容层内置了每张图片的校验值，只会使用与发布版本完全一致的图片。
 
 ## 目录结构
 
