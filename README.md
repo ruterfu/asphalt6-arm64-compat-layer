@@ -9,10 +9,10 @@
 ## 特性
 
 - 在 arm64 iPhone 上运行原版 1.3.2 游戏，实测比赛中约 60 fps
-- 适配全面屏与安全区
+- 适配全面屏与安全区，3D 画面按屏幕真实比例显示，界面不拉伸
 - 适配当前的 OpenGL ES 驱动
 - 移除已停止服务的商店、推广与 iPod 音乐播放器入口，App 不申请音乐库权限
-- 可选的 16:9 高清背景包
+- 可选的高清背景包（16:9 与全面屏 2.2:1）
 
 ## 工作原理
 
@@ -69,9 +69,9 @@ python3 scripts/buildGame.py /path/to/Asphalt6.ipa
 
 ### 高清背景包（可选）
 
-高清背景包 `NativeArtwork.zip` 已单独上传到 Google Drive：[点此下载](https://drive.google.com/file/d/1o8iHwtRP0q2xYJgAp07VcnXXSXm7BQE5/view?usp=sharing)。把它和资源包放在同一目录，启动时会自动安装，标题、菜单与加载画面改用 16:9 高清背景；没有时使用原版背景。
+高清背景包 `NativeArtwork.zip` 已单独上传到 Google Drive：[点此下载](https://drive.google.com/file/d/1o8iHwtRP0q2xYJgAp07VcnXXSXm7BQE5/view?usp=sharing)。把它和资源包放在同一目录，启动时会自动安装，标题、菜单与加载画面改用高清背景，全面屏机型使用 2.2:1 版本；没有时使用原版背景。
 
-高清背景以游戏原版背景为基础，使用 GPT Image 2 重绘为 16:9 画幅。
+高清背景以游戏原版背景为基础，使用 GPT Image 2 重绘为 16:9 与 2.2:1 两种画幅。
 
 ## 测试
 

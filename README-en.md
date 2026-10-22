@@ -9,10 +9,10 @@ This repository contains only the compatibility layer code. It does not include 
 ## Features
 
 - Runs the original 1.3.2 game on arm64 iPhones, about 60 fps in races on device
-- Full-screen and safe-area layout
+- Full-screen and safe-area layout; the 3D view uses the real screen aspect and the interface is not stretched
 - Works with the current OpenGL ES driver
 - Removes the discontinued store, promotion and iPod music player entry points; the app never asks for music library access
-- Optional 16:9 HD background pack
+- Optional HD background pack (16:9 and full-screen 2.2:1)
 
 ## How it works
 
@@ -69,9 +69,9 @@ A full build takes about 1.5–2.5 hours, mostly compiling. Outputs are written 
 
 ### HD background pack (optional)
 
-The HD background pack `NativeArtwork.zip` is uploaded separately to Google Drive: [download it here](https://drive.google.com/file/d/1o8iHwtRP0q2xYJgAp07VcnXXSXm7BQE5/view?usp=sharing). Put it in the same folder as the resource pack; it is installed at launch, and the title, menu and loading screens switch to 16:9 HD backgrounds. Without it, the original backgrounds are used.
+The HD background pack `NativeArtwork.zip` is uploaded separately to Google Drive: [download it here](https://drive.google.com/file/d/1o8iHwtRP0q2xYJgAp07VcnXXSXm7BQE5/view?usp=sharing). Put it in the same folder as the resource pack; it is installed at launch, and the title, menu and loading screens switch to HD backgrounds, using the 2.2:1 versions on full-screen phones. Without it, the original backgrounds are used.
 
-The HD backgrounds are based on the original game backgrounds and were redrawn in 16:9 with GPT Image 2.
+The HD backgrounds are based on the original game backgrounds and were redrawn in 16:9 and 2.2:1 with GPT Image 2.
 
 ## Testing
 
