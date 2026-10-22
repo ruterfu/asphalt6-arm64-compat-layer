@@ -42,21 +42,50 @@ HLE_DEFINE(hle_SCCreateWithName) {
 }
 HLE_BIND("_SCNetworkReachabilityCreateWithName", hle_SCCreateWithName)
 
+// The local Wi-Fi game asks about the link-local network (169.254.0.0) and
+// wants it reachable and direct, not over WWAN; it then looks up en0's IPv4
+// address. That reference is answered from the Wi-Fi interface itself.
+static uint32_t g_linkLocalRef = 0;
+
+static bool WifiHasIPv4(void) {
+    struct ifaddrs *list = NULL;
+    if (getifaddrs(&list)) return false;
+    bool found = false;
+    for (struct ifaddrs *i = list; i && !found; i = i->ifa_next)
+        found = i->ifa_addr && i->ifa_addr->sa_family == AF_INET && !(i->ifa_flags & IFF_LOOPBACK) &&
+                (i->ifa_flags & IFF_UP) && !strcmp(i->ifa_name, "en0");
+    freeifaddrs(list);
+    return found;
+}
+
 HLE_DEFINE(hle_SCCreateWithAddress) {
     // The guest sockaddr lives in emulated memory; a wildcard address is what
     // the game actually asks for when it only wants to know "is there a net".
+    struct sockaddr_in guest = {};
+    const bool linkLocal = GuestRead(vm, GuestArg(vm, 1), &guest, sizeof(guest)) && guest.sin_family == AF_INET &&
+        (ntohl(guest.sin_addr.s_addr) >> 16) == 0xa9fe;
     struct sockaddr_in addr = {};
     addr.sin_len = sizeof(addr);
     addr.sin_family = AF_INET;
     SCNetworkReachabilityRef ref =
         SCNetworkReachabilityCreateWithAddress(NULL, (const struct sockaddr *)&addr);
-    GuestSetRet(vm, HLEWrapOpaque(vm, (void *)(uintptr_t)ref));
+    const uint32_t handle = HLEWrapOpaque(vm, (void *)(uintptr_t)ref);
+    if (linkLocal) g_linkLocalRef = handle;
+    GuestSetRet(vm, handle);
 }
 HLE_BIND("_SCNetworkReachabilityCreateWithAddress", hle_SCCreateWithAddress)
 
 HLE_DEFINE(hle_SCGetFlags) {
     SCNetworkReachabilityRef ref = RefFor(vm, GuestArg(vm, 0));
     gva_t out = GuestArg(vm, 1);
+    if (g_linkLocalRef && GuestArg(vm, 0) == g_linkLocalRef) {
+        const uint32_t direct = WifiHasIPv4() ?
+            (uint32_t)(kSCNetworkReachabilityFlagsReachable | kSCNetworkReachabilityFlagsIsDirect) : 0;
+        if (out) GuestWriteU32(vm, out, direct);
+        NSLog(@"[local-wifi] link-local reachability flags=%#x", direct);
+        GuestSetRet(vm, 1);
+        return;
+    }
     SCNetworkReachabilityFlags flags = 0;
     BOOL ok = ref ? (SCNetworkReachabilityGetFlags(ref, &flags) == true) : NO;
     if (!ok) {

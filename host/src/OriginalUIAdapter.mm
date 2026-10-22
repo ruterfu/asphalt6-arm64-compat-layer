@@ -28,6 +28,9 @@ constexpr std::uint32_t InputOrientation = 0x51c040;
 constexpr std::uint32_t GetSWFManager = 0x16538, GetRayManager = 0x14af8;
 constexpr std::uint32_t MakeRay = 0x17d65c, PlaneCorners = 0xacd30;
 constexpr std::uint32_t FlashRayPosition = 0x17d384;
+// Character colour transform setter: (character, cxform*), r g b a as
+// multiply/add pairs.
+constexpr std::uint32_t SetCxform = 0x325940;
 struct Node {
     std::string path;
     std::uint32_t object=0, name=0, vtable=0;
@@ -81,7 +84,11 @@ struct Movie {
     bool stageWidened=false;
     int onMonitor=-1;
     std::array<Node,4> monitorBackdrops{};
-    Node cupHitArea{"CupList.flip_Main"};
+    Node cupFlipper{"CupList.flip_Main"},cupHitShape;
+    // Multiplayer buttons whose service is unavailable, with their pages.
+    struct Unavailable { Node button,page;bool greyed=false; };
+    std::array<Unavailable,2> unavailable{Unavailable{Node{"menu_3.btn_option_online"},Node{"menu_3"}},
+                                          Unavailable{Node{"menu_4.btn_bluetooth"},Node{"menu_4"}}};
     bool cupHitAreaWidened=false;
     std::array<unsigned,4> backdropTries{};
     std::array<Node,2> offstage{Node{"confirm_buy"},Node{"update_mc"}};
@@ -584,6 +591,36 @@ bool monitorBackAffine(GuestVM *vm,State &s,Movie &m,double width,M &out) {
     }
     return false;
 }
+// Multiplayer "online" needs Gameloft Live, whose servers are gone (and whose
+// entry is disabled), and "Bluetooth" needs GameKit sessions, which are not
+// available: each button is drawn dimmed, and touches on it while its page
+// shows are moved off the stage so the movie never sees them.
+bool disableUnavailableButtons(GuestVM *vm,State &s,Movie &m) {
+    float touch[2]{};std::int32_t viewport[4]{};float stage[4]{};
+    const bool touching=GuestPC(vm)==Touch;const std::uint32_t at=touching?GuestReg(vm,1):0;
+    for(auto &u:m.unavailable){
+        auto &button=u.button;
+        if(!resolve(vm,s,m,button))continue;
+        if(!u.greyed) {
+            const float dim[8]={.45f,0,.45f,0,.45f,0,.6f,0};
+            if(!writeScratch(vm,s,960,dim,32)||!call(vm,SetCxform,{button.object,s.scratch+960}))return false;
+            u.greyed=true;
+        }
+        if(!touching)continue;
+        std::uint8_t pageVisible=0,buttonVisible=0;Geometry geo;Rect box;
+        if(!resolve(vm,s,m,u.page)||!read(vm,u.page.object+0x9b,&pageVisible,1)||!read(vm,button.object+0x9b,&buttonVisible,1)||
+           !pageVisible||!buttonVisible)continue;
+        if(!read(vm,at,touch,8)||!read(vm,m.root+0x24,viewport,16)||!read(vm,m.definition+0xb4,stage,16)||viewport[2]<=0||viewport[3]<=0||
+           !nodeGeometry(vm,s,button,geo)||!bounds(geo.stage,box))continue;
+        // Bitmap pixel to stage twips, as the original conversion (309080).
+        const double x=(touch[0]-viewport[0])*(double(stage[1])-stage[0])/viewport[2],y=(touch[1]-viewport[1])*(double(stage[3])-stage[2])/viewport[3];
+        if(x<box.x0||x>box.x1||y<box.y0||y>box.y1)continue;
+        const float away[2]={-100000,-100000};
+        if(!GuestWrite(vm,at,away,8))return false;
+        break;
+    }
+    return !GuestHasStopRequest(vm);
+}
 bool applyBack20(GuestVM *vm,State &s,Movie &m,const AS6OriginalUIHostMetrics &host,bool metricsReady) {
     const auto pending=[&](const char *reason){
         if(m.backRejectLogs++<3){char line[256];std::snprintf(line,sizeof(line),"[original-ui-back] pending handler=%#x reason=%s; original Back retained",m.handler,reason);GuestRawLog(line);}
@@ -715,17 +752,29 @@ bool applyPauseButtons(GuestVM *vm,State &s,Movie &m) {
 double officeMonitorWidening();
 // The cup row's flipper selects the cup a drag settles on only when the
 // finger is released over its hit area (flip_Main, authored x 74..574, about
-// between the arrows). Widen it about the stage centre over the visible row:
-// the 650-wide stage, or its wider visible part on the widened monitor.
+// between the arrows). Widen the hit shape inside it (its only child, unnamed,
+// identity matrix, 0..542 wide) about its centre over the visible row: the
+// 650-wide stage, or its wider visible part on the widened monitor. flip_Main
+// itself keeps its scale: the flipper measures drags in its coordinates.
 bool widenCupHitArea(GuestVM *vm,State &s,Movie &m) {
-    if(m.cupHitAreaWidened||!resolve(vm,s,m,m.cupHitArea))return !GuestHasStopRequest(vm);
-    std::array<float,6> area{};
-    if(!local(vm,m.cupHitArea,area))return !GuestHasStopRequest(vm);
-    const double W=officeMonitorWidening(),visible=W>1?W/1.22:1,factor=1.35*visible,centre=324*20;
-    area[0]=float(area[0]*factor);area[2]=float(centre+(area[2]-centre)*factor);
-    if(!set(vm,s,m.cupHitArea,area))return false;
+    if(m.cupHitAreaWidened||!resolve(vm,s,m,m.cupFlipper))return !GuestHasStopRequest(vm);
+    if(!m.cupHitShape.object) {
+        std::uint32_t words[128]{};if(!read(vm,m.cupFlipper.object,words,sizeof(words)))return !GuestHasStopRequest(vm);
+        for(std::uint32_t list:words){
+            std::uint32_t child=0,vt=0,matrixAt=0;float m6[6]{};
+            if(list<0x1000||list&3||!word(vm,list,child)||!child||child==m.cupFlipper.object||child&3||
+               !word(vm,child,vt)||vt!=m.cupFlipper.vtable&&(vt<0x1000||vt&3)||!word(vm,child+0x4c,matrixAt)||!read(vm,matrixAt,m6,24))continue;
+            if(m6[0]==1&&m6[1]==0&&m6[2]==0&&m6[3]==0&&m6[4]==1&&m6[5]==0){bindUnnamed(vm,m.cupHitShape,child);break;}
+        }
+        if(!m.cupHitShape.object)return !GuestHasStopRequest(vm);
+    }
+    std::array<float,6> shape{};
+    if(!local(vm,m.cupHitShape,shape))return !GuestHasStopRequest(vm);
+    const double W=officeMonitorWidening(),visible=W>1?W/1.22:1,factor=1.35*visible,centre=271*20;
+    shape[0]=float(shape[0]*factor);shape[2]=float(centre+(shape[2]-centre)*factor);
+    if(!set(vm,s,m.cupHitShape,shape))return false;
     m.cupHitAreaWidened=true;
-    char line[160];std::snprintf(line,sizeof(line),"[career-flip] hit area sx=%.4f tx=%.1f factor=%.3f",area[0],area[2],factor);GuestRawLog(line);
+    char line[160];std::snprintf(line,sizeof(line),"[career-flip] hit shape=%#x sx=%.4f tx=%.1f factor=%.3f",m.cupHitShape.object,shape[0],shape[2],factor);GuestRawLog(line);
     return !GuestHasStopRequest(vm);
 }
 bool applyCareerStars(GuestVM *vm,State &s,Movie &m,const AS6OriginalUIHostMetrics &,bool) {
@@ -881,7 +930,7 @@ extern "C" bool AS6OriginalUIApply(GuestVM *vm,std::uint32_t handler) {
         M affine{1,0,-.065*width,0,1,0};
         if(m->stageWidened&&!monitorBackAffine(vm,s,*m,width,affine))affine=M{1,0,-.065*width,0,1,0};
         unsigned applied=0,changed=0;
-        return applyStageAffine(vm,s,*m,affine,applied,changed)&&!GuestHasStopRequest(vm);
+        return disableUnavailableButtons(vm,s,*m)&&applyStageAffine(vm,s,*m,affine,applied,changed)&&!GuestHasStopRequest(vm);
     }
     if(m->kind==Kind::Paint||m->kind==Kind::Tuning){
         float stage[4]{};
