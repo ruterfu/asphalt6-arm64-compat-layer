@@ -7,12 +7,13 @@ Requires an Apple Silicon Mac with Xcode (iOS SDK) and CMake 3.20+. Python
 packages (scripts/requirements.txt), Ghidra 12.1.4 and JDK 21 are installed
 into build/ automatically on the first run.
 
-Stages (each verified against pinned hashes before the next one runs):
-  1. extract   unpack the IPA and check it is the supported 1.3.2 release
-  2. resources assemble Asphalt6Data for the app's Documents folder
-  3. codegen   translate the game program into C++ sources under generated/
-  4. compile   build the iOS libraries with CMake
-  5. package   link and write the unsigned IPA
+Steps (each verified against pinned hashes before the next one runs):
+  [1/6] Preparing toolchain            check Xcode/CMake, install packages, Ghidra, JDK
+  [2/6] Extracting the game IPA        check it is the supported 1.3.2 release
+  [3/6] Building game resources        assemble Asphalt6Data for the app's Documents
+  [4/6] Translating the game program   C++ sources under generated/
+  [5/6] Compiling AOT                  build the iOS libraries with CMake
+  [6/6] Packaging                      link the unsigned IPA, zip the resources
 
 Outputs in dist/: Asphalt6ARM64.ipa (unsigned, sign it with SideStore or
 similar), Asphalt6Data.zip and, when artwork/ holds the HD images,
@@ -40,8 +41,17 @@ SUPPORTED_VERSION = '1.3.2'
 ARMV7_SHA256 = '4a2209881ab5933113a15770b0615807cfa7d73bf50a9326569a7ed20f77df00'
 
 
+STEPS = 6
+INDENT = '      '
+
+
+def step(number, title):
+    print('[%d/%d] %s' % (number, STEPS, title), flush=True)
+
+
 def log(message):
-    print('[buildGame] ' + message, flush=True)
+    # Details under the current step; drop the module prefix ("codegen: ...").
+    print(INDENT + re.sub(r'^[a-z]+: ', '', message), flush=True)
 
 
 def sha256(path):
@@ -73,7 +83,7 @@ def extract(ipa):
     subprocess.run(['lipo', '-thin', 'armv7', str(app / info['CFBundleExecutable']), '-output', str(armv7)], check=True)
     if sha256(armv7) != ARMV7_SHA256:
         toolchain.fail('game program differs from the supported release')
-    log('extract: %s %s verified' % (info.get('CFBundleDisplayName', app.name), SUPPORTED_VERSION))
+    log('%s %s, game program verified' % (info.get('CFBundleDisplayName', app.name), SUPPORTED_VERSION))
     return app, armv7
 
 
@@ -91,9 +101,9 @@ def compile_ios(generated, jobs, debug=False):
                    check=True, stdout=subprocess.DEVNULL)
     sources = (len(list((generated / 'aot').glob('*.cpp'))) + len(list((generated / 'host').glob('*.cpp'))) +
                len([p for p in (ROOT / 'host/src').iterdir() if p.suffix in {'.cpp', '.m', '.mm'}]) + 4)
-    log('compile: %d sources with %d jobs (full log: build/compile.log)' % (sources, jobs))
+    log('%d sources, %d jobs%s (full log: build/compile.log)' % (sources, jobs, ', debug info' if debug else ''))
     with open(ROOT / 'build/compile.log', 'w') as record, \
-            tqdm(total=sources, unit='file', desc='[buildGame] compile', smoothing=0.05) as bar:
+            tqdm(total=sources, unit='file', desc=INDENT + 'compiling', smoothing=0.05) as bar:
         process = subprocess.Popen(['cmake', '--build', str(build), '--target', 'as6_ios_host', '--', '-j%d' % jobs],
                                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
         tail = []
@@ -115,7 +125,7 @@ def zip_resources(folder, target):
         for path in sorted(folder.rglob('*')):
             if path.is_file():
                 archive.write(path, path.relative_to(folder.parent))
-    log('resources: %s' % target)
+    log('%s written' % target.relative_to(ROOT))
 
 
 def main():
@@ -131,28 +141,38 @@ def main():
     if not args.ipa.is_file():
         parser.error('IPA not found: %s' % args.ipa)
 
+    # ensure_venv re-runs this script inside build/venv; announce step 1 once.
+    if not os.environ.get('AS6_BUILD_IN_VENV'):
+        step(1, 'Preparing toolchain')
+    os.environ['AS6_BUILD_IN_VENV'] = '1'
     toolchain.check_system()
     if platform.machine() != 'arm64':
         toolchain.fail('an Apple Silicon Mac is required')
-    toolchain.ensure_venv()  # re-runs this script inside build/venv
+    toolchain.ensure_venv(log)
     from as6build import artwork, codegen, package, resources
 
     ghidra, jdk = toolchain.ensure_ghidra_and_jdk(log)
+    log('Xcode, CMake, Python packages, Ghidra 12.1.4 and JDK 21 ready')
+    step(2, 'Extracting the game IPA')
     WORK.mkdir(parents=True, exist_ok=True)
     app, armv7 = extract(args.ipa.resolve())
+    step(3, 'Building game resources')
     data = resources.build(app, WORK / 'Asphalt6Data', log)
+    step(4, 'Translating the game program')
     generated = ROOT / 'generated'
     codegen.generate(armv7, app, generated, WORK, ghidra=ghidra, jdk=jdk, promote=not args.no_promote, log=log)
+    step(5, 'Compiling AOT')
     build = compile_ios(generated, args.jobs, debug=args.debug)
+    step(6, 'Packaging')
     DIST.mkdir(exist_ok=True)
     package.package(build, app, data, DIST, log=log)
     zip_resources(WORK / 'Asphalt6Data', DIST / 'Asphalt6Data.zip')
     if artwork.SOURCE.is_dir():
         artwork.package(DIST / 'NativeArtwork.zip', log=log)
     else:
-        log('artwork: artwork/ not found, NativeArtwork.zip skipped')
-    log('done: sign and install dist/Asphalt6ARM64.ipa with SideStore, then copy '
-        'dist/Asphalt6Data.zip (and optionally dist/NativeArtwork.zip) into the app\'s folder in Files')
+        log('artwork/ not found, NativeArtwork.zip skipped')
+    print('Done. Sign and install dist/Asphalt6ARM64.ipa with SideStore, then copy dist/Asphalt6Data.zip '
+          '(and optionally dist/NativeArtwork.zip) into the app\'s folder in Files.', flush=True)
 
 
 if __name__ == '__main__':

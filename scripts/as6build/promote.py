@@ -249,7 +249,7 @@ def main():
     refused = 0
     if args.quiet:
         from tqdm import tqdm
-        names = tqdm(names, unit='module', desc='[buildGame] promote', smoothing=0.05)
+        names = tqdm(names, unit='module', desc='      promoting registers', smoothing=0.05)
     for name in names:
         source = (args.source / name).read_text()
         try:

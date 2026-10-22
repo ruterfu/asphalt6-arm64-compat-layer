@@ -163,7 +163,7 @@ def generate(stream, image, supplemental, output, log=print):
         bar.update(1)
 
     from tqdm import tqdm
-    bar = tqdm(total=MODULES, unit='module', desc='[buildGame] translate', smoothing=0.05)
+    bar = tqdm(total=MODULES, unit='module', desc='      translating', smoothing=0.05)
     records = merged(stream, supplemental)
     header = next(records)
     pending, prior, processed = [], -1, 0

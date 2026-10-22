@@ -33,7 +33,7 @@ JDK = {
 
 
 def fail(message):
-    raise SystemExit('[buildGame] ' + message)
+    raise SystemExit('error: ' + message)
 
 
 def check_system():
@@ -54,15 +54,16 @@ def check_system():
         fail('CMake 3.20 or newer is required (found %s)' % version[2])
 
 
-def ensure_venv():
+def ensure_venv(log):
     """Re-run this script inside build/venv with requirements.txt installed."""
     python = VENV / 'bin/python'
     marker = VENV / '.requirements'
     wanted = REQUIREMENTS.read_text()
     if not (python.is_file() and marker.is_file() and marker.read_text() == wanted):
-        print('[buildGame] preparing Python environment (%s)' % ', '.join(wanted.split()), flush=True)
+        log('installing Python packages (%s)' % ', '.join(wanted.split()))
         subprocess.run([sys.executable, '-m', 'venv', str(VENV)], check=True)
-        subprocess.run([str(python), '-m', 'pip', 'install', '-q', '-r', str(REQUIREMENTS)], check=True)
+        subprocess.run([str(python), '-m', 'pip', 'install', '-q', '--disable-pip-version-check',
+                        '-r', str(REQUIREMENTS)], check=True)
         marker.write_text(wanted)
     if Path(sys.prefix).resolve() != VENV.resolve():
         os.execv(str(python), [str(python), '-I'] + sys.argv)
@@ -84,7 +85,7 @@ def download(spec, target, log):
     log('downloading ' + spec['url'].rsplit('/', 1)[-1])
     with urllib.request.urlopen(spec['url']) as response, open(partial, 'wb') as out:
         total = int(response.headers.get('Content-Length') or 0)
-        with tqdm(total=total, unit='B', unit_scale=True, leave=False) as bar:
+        with tqdm(total=total, unit='B', unit_scale=True, leave=False, desc='      downloading') as bar:
             for block in iter(lambda: response.read(1 << 20), b''):
                 out.write(block)
                 bar.update(len(block))

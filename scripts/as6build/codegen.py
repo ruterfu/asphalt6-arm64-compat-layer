@@ -11,6 +11,7 @@ import gzip
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -75,12 +76,28 @@ def export_pcode(armv7, work, ghidra, jdk, log):
     image = out / 'Asphalt6.armv7'
     shutil.copyfile(armv7, image)
     env = dict(os.environ, JAVA_HOME=str(jdk), _JAVA_HOME=str(jdk), TMPDIR=str(out / 'tmp'))
-    log('codegen: Ghidra analysis (one-time, about 10-20 minutes)')
-    subprocess.run([str(ghidra / 'support/analyzeHeadless'), str(out / 'project'), 'as6', '-import', str(image),
+    log('codegen: analysing the program with Ghidra (one-time, about 10 minutes)')
+    bar = None
+
+    def export_progress(line):
+        nonlocal bar
+        found = re.search(r'PCODE_STREAM_PROGRESS instructions=(\d+) expected=(\d+)', line)
+        if not found:
+            return
+        from tqdm import tqdm
+        if bar is None:
+            bar = tqdm(total=int(found.group(2)), unit='insn', unit_scale=True, desc='      exporting', smoothing=0.05)
+        bar.update(int(found.group(1)) - bar.n)
+    try:
+        run_logged([str(ghidra / 'support/analyzeHeadless'), str(out / 'project'), 'as6', '-import', str(image),
                     '-max-cpu', '2', '-scriptPath', str(PIPELINE), '-postScript', 'ExportPcodeStream.java',
                     str(image), str(out / 'instructions.partial.jsonl.gz'), str(out / 'non-instruction-ranges.jsonl.gz'),
                     str(PIPELINE / 'ghidra-listing-coverage.json'),
-                    '-log', str(out / 'ghidra.log'), '-scriptlog', str(out / 'script.log')], env=env, check=True)
+                    '-log', str(out / 'ghidra.log'), '-scriptlog', str(out / 'script.log')],
+                   out / 'analyze.out', env, export_progress)
+    finally:
+        if bar is not None:
+            bar.close()
     partial = out / 'instructions.partial.jsonl.gz'
     if normalize_stream(partial, stream) != STREAM_SHA256:
         stream.unlink()
@@ -102,9 +119,26 @@ def record_key(record):
 
 def headless(ghidra, jdk, project, script_dir, script, arguments, log_dir):
     env = dict(os.environ, JAVA_HOME=str(jdk), _JAVA_HOME=str(jdk), TMPDIR=str(log_dir))
-    subprocess.run([str(ghidra / 'support/analyzeHeadless'), str(project), 'as6', '-process', 'Asphalt6.armv7',
-                    '-readOnly', '-noanalysis', '-max-cpu', '1', '-scriptPath', str(script_dir), '-postScript', script,
-                    *[str(a) for a in arguments], '-log', str(log_dir / (script + '.log'))], env=env, check=True)
+    run_logged([str(ghidra / 'support/analyzeHeadless'), str(project), 'as6', '-process', 'Asphalt6.armv7',
+                '-readOnly', '-noanalysis', '-max-cpu', '1', '-scriptPath', str(script_dir), '-postScript', script,
+                *[str(a) for a in arguments], '-log', str(log_dir / (script + '.log'))],
+               log_dir / (script + '.out'), env)
+
+
+def run_logged(command, output, env, on_line=None):
+    """Run a tool with its console output kept in `output` instead of the terminal."""
+    tail = []
+    with open(output, 'w') as record:
+        process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                   text=True, bufsize=1, env=env)
+        for line in process.stdout:
+            record.write(line)
+            tail = (tail + [line])[-40:]
+            if on_line:
+                on_line(line)
+        if process.wait():
+            sys.stderr.write(''.join(tail))
+            raise SystemExit('error: %s failed; see %s' % (Path(command[0]).name, output))
 
 
 def recover_supplemental(stream, work, ghidra, jdk, log):

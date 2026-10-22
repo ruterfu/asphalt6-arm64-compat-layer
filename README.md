@@ -110,15 +110,18 @@ shasum -a 256 Asphalt6.armv7                                 # 游戏程序 ARMv
 python3 scripts/buildGame.py /path/to/Asphalt6.ipa
 ```
 
-脚本依次执行以下阶段，每一步都用固定的 SHA-256 校验结果，任何不一致都会立即停止：
+脚本分 6 步执行，每一步都用固定的 SHA-256 校验结果，任何不一致都会立即停止：
 
-1. **extract**：解开 IPA，确认是受支持的 1.3.2 版本；
-2. **resources**：从 IPA 组装出游戏资源文件夹 `Asphalt6Data`；
-3. **codegen**：用 Ghidra 分析游戏程序，转换成本机 C++ 源码，再做按基本块的寄存器优化，结果放在 `generated/`（共约 20 分钟）；
-4. **compile**：用 CMake 编译 iOS 静态库，显示进度条，约需 1.5–2.5 小时；
-5. **package**：链接并输出未签名的安装包。
+| 步骤 | 终端显示 | 内容 |
+| --- | --- | --- |
+| 1 | `[1/6] Preparing toolchain` | 检查 Xcode 与 CMake，安装 Python 包，首次运行时下载 Ghidra 与 JDK |
+| 2 | `[2/6] Extracting the game IPA` | 解开 IPA，确认是受支持的 1.3.2 版本 |
+| 3 | `[3/6] Building game resources` | 从 IPA 组装出游戏资源文件夹 `Asphalt6Data` |
+| 4 | `[4/6] Translating the game program` | 用 Ghidra 分析游戏程序，转换成本机 C++ 源码，再做按基本块的寄存器优化，结果放在 `generated/`（约 20 分钟） |
+| 5 | `[5/6] Compiling AOT` | 用 CMake 编译 iOS 静态库（约 1.5–2.5 小时） |
+| 6 | `[6/6] Packaging` | 链接并输出未签名的安装包，打包资源 |
 
-转换和编译都会显示进度条；编译的完整输出保存在 `build/compile.log`。
+下载、分析导出、转换、寄存器优化和编译都会显示进度条；Ghidra 的输出保存在 `build/work/pcode/`，编译的完整输出保存在 `build/compile.log`。
 
 产物位于 `dist/`：
 
