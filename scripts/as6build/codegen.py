@@ -17,6 +17,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from . import toolchain
+
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
 PIPELINE = HERE / 'pipeline'
@@ -162,16 +164,16 @@ def run_logged(command, output, env, on_line=None):
     """Run a tool with its console output kept in `output` instead of the terminal."""
     tail = []
     with open(output, 'w') as record:
-        process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                   text=True, bufsize=1, env=env)
-        for line in process.stdout:
-            record.write(line)
-            tail = (tail + [line])[-40:]
-            if on_line:
-                on_line(line)
-        if process.wait():
-            sys.stderr.write(''.join(tail))
-            raise SystemExit('error: %s failed; see %s' % (Path(command[0]).name, output))
+        with toolchain.child(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                             text=True, bufsize=1, env=env) as process:
+            for line in process.stdout:
+                record.write(line)
+                tail = (tail + [line])[-40:]
+                if on_line:
+                    on_line(line)
+            if process.wait():
+                sys.stderr.write(''.join(tail))
+                raise SystemExit('error: %s failed; see %s' % (Path(command[0]).name, output))
 
 
 def recover_supplemental(stream, work, ghidra, jdk, log):

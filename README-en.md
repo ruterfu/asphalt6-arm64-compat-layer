@@ -94,7 +94,7 @@ Frame rate (Career race 1 · Nassau, full race):
 
 ## Copyright
 
-The game program, artwork, audio and related trademarks of *Asphalt 6: Adrenaline* belong to Gameloft. This project is not affiliated with Gameloft and does not include or distribute any game content. The images in the HD background pack are redrawn from the original backgrounds; their content and art design likewise belong to Gameloft.
+The game program, artwork, audio and related trademarks of *Asphalt 6: Adrenaline* belong to Gameloft. This project is not affiliated with Gameloft and does not include or distribute any game content. The images in the HD background pack are based on the original backgrounds and were redrawn with the help of GPT Image 2; their content and art design likewise belong to Gameloft.
 
 ## License
 

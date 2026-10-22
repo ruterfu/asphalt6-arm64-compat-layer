@@ -94,7 +94,7 @@ python3 scripts/buildGame.py /path/to/Asphalt6.ipa
 
 ## 版权声明
 
-《狂野飙车 6》（Asphalt 6: Adrenaline）的游戏程序、美术、音频及相关商标归 Gameloft 所有。本项目与 Gameloft 无关，不包含也不分发任何游戏内容。高清背景包中的图片基于原版背景重绘，其画面内容与美术设计同样归 Gameloft 所有。
+《狂野飙车 6》（Asphalt 6: Adrenaline）的游戏程序、美术、音频及相关商标归 Gameloft 所有。本项目与 Gameloft 无关，不包含也不分发任何游戏内容。高清背景包中的图片基于原版背景，借助 GPT Image 2 重绘，其画面内容与美术设计同样归 Gameloft 所有。
 
 ## 许可
 

@@ -130,25 +130,45 @@ def single_instance():
     return fd
 
 
+def check_disk_space(debug):
+    """Fail early instead of halfway: a full build peaks around 25 GB."""
+    resumed = (ROOT / 'build/.finish-step4').is_file()
+    needed = (10 if resumed else 25) + (13 if debug else 0)
+    free = shutil.disk_usage(ROOT).free / 1e9
+    if free < needed:
+        toolchain.fail('not enough disk space: %.0f GB free, about %d GB needed' % (free, needed))
+
+
 def extract(ipa):
     target = WORK / 'ipa'
     if target.exists():
         shutil.rmtree(target)
-    with zipfile.ZipFile(ipa) as archive:
-        for member in archive.infolist():
-            path = Path(member.filename)
-            if path.is_absolute() or '..' in path.parts:
-                toolchain.fail('unsafe path in IPA: ' + member.filename)
-        archive.extractall(target)
+    not_ipa = '%s is not a valid Asphalt 6 IPA' % ipa
+    try:
+        with zipfile.ZipFile(ipa) as archive:
+            for member in archive.infolist():
+                path = Path(member.filename)
+                if path.is_absolute() or '..' in path.parts:
+                    toolchain.fail('unsafe path in IPA: ' + member.filename)
+            archive.extractall(target)
+    except (zipfile.BadZipFile, zipfile.LargeZipFile, EOFError):
+        toolchain.fail(not_ipa + ' (not a readable zip archive; is the download complete?)')
     apps = sorted((target / 'Payload').glob('*.app'))
     if len(apps) != 1:
-        toolchain.fail('expected exactly one .app inside Payload/')
+        toolchain.fail(not_ipa + ' (expected exactly one .app inside Payload/)')
     app = apps[0]
-    info = plistlib.loads((app / 'Info.plist').read_bytes())
+    try:
+        info = plistlib.loads((app / 'Info.plist').read_bytes())
+        executable = app / info['CFBundleExecutable']
+    except (OSError, KeyError, plistlib.InvalidFileException, ValueError):
+        toolchain.fail(not_ipa + ' (Info.plist missing or damaged)')
     if info.get('CFBundleVersion') != SUPPORTED_VERSION:
         toolchain.fail('unsupported game version %s (need %s)' % (info.get('CFBundleVersion'), SUPPORTED_VERSION))
     armv7 = WORK / 'program.armv7'
-    subprocess.run(['lipo', '-thin', 'armv7', str(app / info['CFBundleExecutable']), '-output', str(armv7)], check=True)
+    thin = subprocess.run(['lipo', '-thin', 'armv7', str(executable), '-output', str(armv7)],
+                          capture_output=True, text=True)
+    if thin.returncode or not armv7.is_file():
+        toolchain.fail(not_ipa + ' (game program has no ARMv7 code)')
     if sha256(armv7) != ARMV7_SHA256:
         toolchain.fail('game program differs from the supported release')
     log('%s %s, game program verified' % (info.get('CFBundleDisplayName', app.name), SUPPORTED_VERSION))
@@ -172,17 +192,17 @@ def compile_ios(generated, jobs, debug=False):
     log('%d sources, %d jobs%s (full log: build/compile.log)' % (sources, jobs, ', debug info' if debug else ''))
     with open(ROOT / 'build/compile.log', 'w') as record, \
             tqdm(total=sources, unit='file', desc=INDENT + 'compiling', smoothing=0.05) as bar:
-        process = subprocess.Popen(['cmake', '--build', str(build), '--target', 'as6_ios_host', '--', '-j%d' % jobs],
-                                   stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
         tail = []
-        for line in process.stdout:
-            record.write(line)
-            tail = (tail + [line])[-40:]
-            if re.search(r'Building (CXX|C|OBJCXX) object', line):
-                bar.update(1)
-        if process.wait():
-            sys.stderr.write(''.join(tail))
-            toolchain.fail('compile failed; see build/compile.log')
+        with toolchain.child(['cmake', '--build', str(build), '--target', 'as6_ios_host', '--', '-j%d' % jobs],
+                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1) as process:
+            for line in process.stdout:
+                record.write(line)
+                tail = (tail + [line])[-40:]
+                if re.search(r'Building (CXX|C|OBJCXX) object', line):
+                    bar.update(1)
+            if process.wait():
+                sys.stderr.write(''.join(tail))
+                toolchain.fail('compile failed; see build/compile.log')
         bar.update(bar.total - bar.n)
     return build
 
@@ -197,6 +217,27 @@ def zip_resources(folder, target):
 
 
 def main():
+    try:
+        run()
+    except KeyboardInterrupt:
+        print('\ninterrupted. Run the same command again to continue from the last finished step.',
+              file=sys.stderr, flush=True)
+        sys.exit(130)
+    except SystemExit:
+        raise
+    except Exception as error:
+        import traceback
+        report = ROOT / 'build/buildGame-error.log'
+        try:
+            report.parent.mkdir(parents=True, exist_ok=True)
+            report.write_text(traceback.format_exc())
+            where = '; details in %s' % report.relative_to(ROOT)
+        except OSError:
+            where = ''
+        sys.exit('error: unexpected failure: %s%s' % (error, where))
+
+
+def run():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('ipa', type=Path, help='your Asphalt 6 1.3.2 IPA')
     parser.add_argument('--jobs', type=int, default=max(1, (os.cpu_count() or 2) // 2),
@@ -204,8 +245,11 @@ def main():
     parser.add_argument('--debug', action='store_true',
                         help='compile with debug info (-g) for crash logs and profiling; build/ios grows to ~18 GB')
     args = parser.parse_args()
+    args.ipa = args.ipa.expanduser()
     if not args.ipa.is_file():
         parser.error('IPA not found: %s' % args.ipa)
+    if args.jobs < 1:
+        parser.error('--jobs must be at least 1')
 
     single_instance()
     # ensure_venv re-runs this script inside build/venv; print these once.
@@ -218,6 +262,7 @@ def main():
     toolchain.check_system()
     if platform.machine() != 'arm64':
         toolchain.fail('an Apple Silicon Mac is required')
+    check_disk_space(args.debug)
     toolchain.ensure_venv(log)
     from as6build import artwork, codegen, package, resources
 
