@@ -200,6 +200,12 @@ extern "C" bool GuestCopyOriginalUIHostMetrics(AS6OriginalUIHostMetrics *out) {
 // as h x w) to the full window; read by the perspective policy each frame.
 static std::atomic<double> g_canvasHorizontalStretch{1.0};
 extern "C" double AS6CanvasHorizontalStretch(void) { return g_canvasHorizontalStretch.load(std::memory_order_relaxed); }
+// The info page's Twitter entry: Gameloft's page on X, in the browser/X app.
+extern "C" void AS6OpenGameloftX(void) {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [UIApplication.sharedApplication openURL:[NSURL URLWithString:@"https://x.com/gameloft"] options:@{} completionHandler:nil];
+    });
+}
 
 static void LayoutOriginalView(UIView *view, UIWindow *window) {
     UIView *container = view.superview;

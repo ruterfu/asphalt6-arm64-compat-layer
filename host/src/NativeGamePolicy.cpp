@@ -12,10 +12,14 @@
 
 // Horizontal stretch of the original 3:2 canvas on this screen (1 when unknown).
 extern "C" double AS6CanvasHorizontalStretch(void);
+extern "C" void AS6OpenGameloftX(void);
 
 namespace {
 using namespace as6aot;
 constexpr std::uint32_t LaunchGameloftLive = 0x280cu;
+// launchTwitter() marks the delegate to open Gameloft's tracked redirect,
+// built from the device UDID that current iOS no longer provides.
+constexpr std::uint32_t LaunchTwitter = 0x2834u;
 constexpr std::uint32_t CreateStoreInstance = 0x2baa38u;
 constexpr std::uint32_t IsStoreEnabled = 0x2ba934u;
 constexpr std::uint32_t StoreEnabledByte = 0x70e43cu;
@@ -301,7 +305,8 @@ Status DisabledStore(Context &ctx, bool legacy, std::uint32_t stop_pc, bool stop
          ctx.next_pc != SetCurrentMenu && ctx.next_pc != OpenAppStoreLink &&
          ctx.next_pc != EnterAppStore && ctx.next_pc != NativeBuyStarUnlock &&
          ctx.next_pc != NativeItemID && ctx.next_pc != BuyItem &&
-         ctx.next_pc != ReturnStoreToForeground && ctx.next_pc != LaunchGameloftLive))
+         ctx.next_pc != ReturnStoreToForeground && ctx.next_pc != LaunchGameloftLive &&
+         ctx.next_pc != LaunchTwitter))
         return ctx.status = InvalidState;
     if (!legacy && ctx.next_pc == stop_pc && ctx.isa_thumb == stop_thumb)
         return ctx.status = Returned;
@@ -315,6 +320,9 @@ Status DisabledStore(Context &ctx, bool legacy, std::uint32_t stop_pc, bool stop
         if (ctx.status != Returned) return ctx.status;
     } else if (ctx.next_pc == IsStoreEnabled) {
         write_bytes(ctx.registers, layout::r0, 4, Word(0));
+    } else if (ctx.next_pc == LaunchTwitter) {
+        // Instead, open Gameloft's page on X directly.
+        AS6OpenGameloftX();
     }
     // Disabled commerce and Gameloft Live entry points return without side effects. The
     // foreground callback must not dereference the unconstructed Store facade.
@@ -352,14 +360,15 @@ NativeFunction Lookup(std::uint32_t pc, bool thumb) {
                    pc == NativeGotoPopout || pc == BuyStore || pc == OpenAppStoreLink ||
                    pc == EnterAppStore || pc == NativeBuyStarUnlock ||
                    pc == NativeItemID || pc == BuyItem ||
-                   pc == ReturnStoreToForeground || pc == LaunchGameloftLive)) return DisabledStore;
+                   pc == ReturnStoreToForeground || pc == LaunchGameloftLive ||
+                   pc == LaunchTwitter)) return DisabledStore;
     if (const auto music=as6_music_boundary::lookup(pc,thumb)) return music;
     return AS6NativeProgramWithStartupRecovery()->lookup(pc, thumb);
 }
 bool Validate() {
     const auto *base = AS6NativeProgramWithStartupRecovery();
     return base && base->valid() && base->register_size() == layout::Size &&
-        base->lookup(LaunchGameloftLive, false) &&
+        base->lookup(LaunchGameloftLive, false) && base->lookup(LaunchTwitter, false) &&
         base->lookup(CreateStoreInstance, false) && base->lookup(IsStoreEnabled, false) &&
         base->lookup(NativeGotoPopout, false) && base->lookup(BuyStore, false) &&
         base->lookup(SetCurrentMenu, false) && base->lookup(OpenAppStoreLink, false) &&

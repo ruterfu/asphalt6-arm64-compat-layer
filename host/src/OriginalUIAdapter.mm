@@ -4,7 +4,6 @@
 #include "OriginalUIGeometry.hpp"
 #include "OriginalUIHostMetrics.hpp"
 #include "CareerStarLayout.hpp"
-#include "HDArtworkPack.hpp"
 #include <array>
 #include <cmath>
 #include <cstdio>
@@ -855,12 +854,11 @@ namespace as6_original_ui { namespace {
 // screen. The settled camera's view is about 1.2 times the monitor's width in
 // the original 3:2 view, and the wide view adds the screen's horizontal
 // stretch; 1.22 leaves a little for the screen sitting slightly off centre.
-// Only with the complete HD pack (as found by the startup scan), whose
-// backgrounds fill the widened pages; without it the monitor and its pages
-// stay original.
+// With or without the HD pack: without it the widened pages' backgrounds are
+// the original art, stretched.
 double officeMonitorWidening() {
     const double stretch=AS6CanvasHorizontalStretch();
-    return AS6HDArtworkAvailable()&&std::isfinite(stretch)&&stretch>1.001&&stretch<3?stretch*1.22:1;
+    return std::isfinite(stretch)&&stretch>1.001&&stretch<3?stretch*1.22:1;
 }
 // The monitor movie renders the definition's stage rectangle into the whole
 // bitmap (exact fit). Widening that rectangle makes Flash draw a wider stage
