@@ -14,9 +14,6 @@ This repository contains **only the compatibility layer code**. It does not incl
   - iPhone Duo is not supported yet.
 - **Graphics**: OpenGL ES calls are adapted to the current driver; three old shaders get declaration fixes at build time so that they compile on the current driver.
 - **Music**: the game's own music is played through the system audio service and pauses and resumes normally.
-- **Stability**:
-  - During background loading (for example when switching cars quickly), the game thread hands execution to the main thread first, so the screen and touch input stay responsive and the system watchdog does not terminate the app;
-  - The offline event queue file (`Documents/events.dat`) is moved aside before launch once it exceeds 1 MB, so its unbounded growth cannot prevent the game from starting.
 - **Optional HD background pack**: see below.
 
 ## How it works
