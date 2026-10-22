@@ -131,6 +131,7 @@ python3 scripts/buildGame.py /path/to/Asphalt6.ipa
 | 参数 | 作用 |
 | --- | --- |
 | `--jobs N` | 编译并行数，默认为 CPU 核数的一半 |
+| `--debug` | 编译时带调试信息（`-g`），便于对照崩溃日志和性能分析；生成的机器码相同，但 `build/ios` 会增大到约 18 GB |
 | `--no-promote` | 不做寄存器优化，直接编译转换结果（代码更小、编译更快） |
 
 ## 安装

@@ -77,11 +77,14 @@ def extract(ipa):
     return app, armv7
 
 
-def compile_ios(generated, jobs):
+def compile_ios(generated, jobs, debug=False):
     from tqdm import tqdm
     build = ROOT / 'build/ios'
+    flags = '-g' if debug else ''
     subprocess.run(['cmake', '-S', str(ROOT), '-B', str(build), '-G', 'Unix Makefiles',
-                    '-DCMAKE_BUILD_TYPE=', '-DCMAKE_C_FLAGS=-g', '-DCMAKE_CXX_FLAGS=-g', '-DCMAKE_OBJCXX_FLAGS=-g',
+                    # -g adds debug info only (same machine code) but grows build/ios to ~18 GB.
+                    '-DCMAKE_BUILD_TYPE=', '-DCMAKE_C_FLAGS=%s' % flags, '-DCMAKE_CXX_FLAGS=%s' % flags,
+                    '-DCMAKE_OBJCXX_FLAGS=%s' % flags,
                     '-DCMAKE_CXX_EXTENSIONS=OFF', '-DCMAKE_OBJCXX_EXTENSIONS=OFF',
                     '-DCMAKE_SYSTEM_NAME=iOS', '-DCMAKE_OSX_SYSROOT=iphoneos', '-DCMAKE_OSX_ARCHITECTURES=arm64',
                     '-DCMAKE_OSX_DEPLOYMENT_TARGET=17.0', '-DAS6_GENERATED_DIR=%s' % generated],
@@ -120,6 +123,8 @@ def main():
     parser.add_argument('ipa', type=Path, help='your Asphalt 6 1.3.2 IPA')
     parser.add_argument('--jobs', type=int, default=max(1, (os.cpu_count() or 2) // 2),
                         help='parallel compile jobs (default: half the CPU cores)')
+    parser.add_argument('--debug', action='store_true',
+                        help='compile with debug info (-g) for crash logs and profiling; build/ios grows to ~18 GB')
     parser.add_argument('--no-promote', action='store_true',
                         help='compile the translated modules without block-structured register promotion')
     args = parser.parse_args()
@@ -138,7 +143,7 @@ def main():
     data = resources.build(app, WORK / 'Asphalt6Data', log)
     generated = ROOT / 'generated'
     codegen.generate(armv7, app, generated, WORK, ghidra=ghidra, jdk=jdk, promote=not args.no_promote, log=log)
-    build = compile_ios(generated, args.jobs)
+    build = compile_ios(generated, args.jobs, debug=args.debug)
     DIST.mkdir(exist_ok=True)
     package.package(build, app, data, DIST, log=log)
     zip_resources(WORK / 'Asphalt6Data', DIST / 'Asphalt6Data.zip')
