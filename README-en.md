@@ -133,7 +133,7 @@ Options:
 | --- | --- |
 | `--jobs N` | Number of parallel compile jobs; defaults to half the CPU cores |
 | `--debug` | Compiles with debug info (`-g`) for crash logs and profiling; the machine code is identical, but `build/ios` grows to about 18 GB |
-| `--no-promote` | Skips register promotion and compiles the conversion output directly (smaller code, faster compile) |
+| `--no-promote` | Skips register promotion and compiles the conversion output directly: smaller code and a faster compile, but **noticeably slower at runtime** (this optimization alone took the average race frame time from 25.3 ms to 18.7 ms on device); not recommended in general |
 
 ## Installation
 
