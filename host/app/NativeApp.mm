@@ -257,7 +257,7 @@ static BOOL BootNativeGame(void) {
             if(!ready) {
                 if(!installedData&&AS6ResourceArchivePresent()) {
                     show(@"正在解压资源包");
-                    if(AS6InstallResourceArchive()==AS6ArchiveInstalled){installedData=YES;fullHash=YES;continue;}
+                    if(AS6InstallResourceArchive(^(double fraction){show([NSString stringWithFormat:@"正在解压资源包 %d%%",(int)(fraction*100)]);})==AS6ArchiveInstalled){installedData=YES;fullHash=YES;continue;}
                     damagedData=YES;
                 }
                 break;

@@ -16,8 +16,9 @@ BOOL AS6ResourceArchivePresent(void);
 // Replaces Documents/Asphalt6Data with the archive's contents (entries may sit
 // at the archive root or under one Asphalt6Data/ folder). Installed HD artwork
 // is carried over. The archive is deleted only after a complete extraction;
-// a damaged archive leaves the previous folder state untouched.
-AS6ArchiveResult AS6InstallResourceArchive(void);
+// a damaged archive leaves the previous folder state untouched. `progress`
+// (optional) receives the extracted fraction of bytes, each whole percent once.
+AS6ArchiveResult AS6InstallResourceArchive(void (^progress)(double fraction));
 #ifdef __cplusplus
 }
 #endif

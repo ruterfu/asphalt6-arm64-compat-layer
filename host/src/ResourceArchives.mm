@@ -27,7 +27,7 @@ extern "C" BOOL AS6ResourceArchivePresent(void) {
     return [NSFileManager.defaultManager fileExistsAtPath:ArchivePath()];
 }
 
-extern "C" AS6ArchiveResult AS6InstallResourceArchive(void) {
+extern "C" AS6ArchiveResult AS6InstallResourceArchive(void (^progress)(double fraction)) {
     ErrnoScope preserve;
     NSFileManager *files = NSFileManager.defaultManager;
     if (![files fileExistsAtPath:ArchivePath()]) return AS6ArchiveMissing;
@@ -40,6 +40,9 @@ extern "C" AS6ArchiveResult AS6InstallResourceArchive(void) {
     if (![files createDirectoryAtPath:staging withIntermediateDirectories:YES attributes:nil error:nil])
         return AS6ArchiveDamaged;
     NSUInteger extracted = 0;
+    unsigned long long total = 0, done = 0;
+    int reported = -1;
+    for (const auto &entry : archive.entries()) total += entry.size;
     for (const auto &entry : archive.entries()) {
         const std::string relative = ResourceName(entry.name);
         if (relative.empty() || entry.directory()) continue;
@@ -51,6 +54,9 @@ extern "C" AS6ArchiveResult AS6InstallResourceArchive(void) {
             return AS6ArchiveDamaged;
         }
         ++extracted;
+        done += entry.size;
+        const int percent = total ? int(done * 100 / total) : 100;
+        if (progress && percent != reported) progress((reported = percent) / 100.0);
     }
     if (!extracted) {
         [files removeItemAtPath:staging error:nil];
