@@ -3,8 +3,8 @@
 Pipeline (all outputs pinned by SHA-256):
   1. Ghidra 12.1.4 imports the ARMv7 program with default analysis and the
      exporter writes its instruction semantics (P-code) stream.
-  2. The stream is lowered to fixed C++ modules (generated/aot).
-  3. Callback and table fragments are lowered the same way (generated/host).
+  2. The stream is lowered to fixed C++ modules (build/generated/aot).
+  3. Callback and table fragments are lowered the same way (build/generated/host).
   4. The program's data image is written as NativeDataBundle.cpp.
 """
 import gzip

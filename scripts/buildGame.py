@@ -11,7 +11,7 @@ Steps (each verified against pinned hashes before the next one runs):
   [1/6] Preparing toolchain            check Xcode/CMake, install packages, Ghidra, JDK
   [2/6] Extracting the game IPA        check it is the supported 1.3.2 release
   [3/6] Building game resources        assemble Asphalt6Data for the app's Documents
-  [4/6] Translating the game program   C++ sources under generated/
+  [4/6] Translating the game program   C++ sources under build/generated/
   [5/6] Compiling AOT                  build the iOS libraries with CMake
   [6/6] Packaging                      link the unsigned IPA, zip the resources
 
@@ -159,7 +159,7 @@ def main():
     step(3, 'Building game resources')
     data = resources.build(app, WORK / 'Asphalt6Data', log)
     step(4, 'Translating the game program')
-    generated = ROOT / 'generated'
+    generated = ROOT / 'build/generated'
     codegen.generate(armv7, app, generated, WORK, ghidra=ghidra, jdk=jdk, promote=not args.no_promote, log=log)
     step(5, 'Compiling AOT')
     build = compile_ios(generated, args.jobs, debug=args.debug)

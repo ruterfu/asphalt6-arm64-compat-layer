@@ -1,4 +1,4 @@
-"""Lower the code fragments the listing does not reach into generated/host.
+"""Lower the code fragments the listing does not reach into build/generated/host.
 
 Callback tables, vtable gaps and runtime stubs are exported by their own
 Ghidra scripts (pipeline/fragments/<name>/) and lowered with the same module

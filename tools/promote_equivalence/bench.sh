@@ -7,8 +7,8 @@ CXX="xcrun clang++ -std=c++17 -O2 -fno-strict-aliasing -fno-exceptions -fno-rtti
 mkdir -p "$W/promoted" "$W/obj"
 $CXX -c "$ROOT/tools/promote_equivalence/bench.cpp" -o "$W/obj/bench.o"
 for m in "$@"; do
-    python3 -I "$ROOT/scripts/as6build/promote.py" "$ROOT/generated/aot" "$W/promoted" --only "$m.cpp" 2>/dev/null
-    $CXX -D"as6_aot_lookup_$m=orig_lookup" -c "$ROOT/generated/aot/$m.cpp" -o "$W/obj/$m.orig.o" &
+    python3 -I "$ROOT/scripts/as6build/promote.py" "$ROOT/build/generated/aot" "$W/promoted" --only "$m.cpp" 2>/dev/null
+    $CXX -D"as6_aot_lookup_$m=orig_lookup" -c "$ROOT/build/generated/aot/$m.cpp" -o "$W/obj/$m.orig.o" &
     $CXX -D"as6_aot_lookup_$m=prom_lookup" -c "$W/promoted/$m.cpp" -o "$W/obj/$m.prom.o" &
     wait
     # Start at block leaders (fast-path entries); keys are pc<<1 for ARM mode.

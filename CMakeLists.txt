@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.20)
 project(Asphalt6Arm64Compat LANGUAGES C CXX)
 
 # Sources produced from the user's own game copy by scripts/buildGame.py.
-set(AS6_GENERATED_DIR "${CMAKE_CURRENT_SOURCE_DIR}/generated" CACHE PATH
+set(AS6_GENERATED_DIR "${CMAKE_CURRENT_SOURCE_DIR}/build/generated" CACHE PATH
     "Directory with aot/, host/ and NativeDataBundle.cpp produced by scripts/buildGame.py")
 set(AS6_HOST_BUILD_ID "compat-layer" CACHE STRING "Build identity reported in diagnostics")
 

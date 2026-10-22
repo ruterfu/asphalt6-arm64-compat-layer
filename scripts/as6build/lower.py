@@ -1,4 +1,4 @@
-"""Lower the instruction stream to the fixed C++ modules in generated/aot.
+"""Lower the instruction stream to the fixed C++ modules in build/generated/aot.
 
 Ordering, sharding and exclusions match the reference build exactly:
 * base records (the Ghidra listing) and supplemental records (code the

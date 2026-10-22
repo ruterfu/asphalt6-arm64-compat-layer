@@ -17,11 +17,11 @@ fi
 [ -f "$WORK/obj/driver.o" ] || $CXX -c "$ROOT/tools/promote_equivalence/driver.cpp" -o "$WORK/obj/driver.o"
 for module in "$@"; do
     name=$(basename "$module" .cpp)
-    python3 -I "$ROOT/scripts/as6build/promote.py" "$ROOT/generated/aot" "$WORK/promoted" --only "$name.cpp" 2>/dev/null
+    python3 -I "$ROOT/scripts/as6build/promote.py" "$ROOT/build/generated/aot" "$WORK/promoted" --only "$name.cpp" 2>/dev/null
     lookup="as6_aot_lookup_$name"
-    $CXX -D"$lookup=orig_lookup" -c "$ROOT/generated/aot/$name.cpp" -o "$WORK/obj/$name.orig.o"
+    $CXX -D"$lookup=orig_lookup" -c "$ROOT/build/generated/aot/$name.cpp" -o "$WORK/obj/$name.orig.o"
     $CXX -D"$lookup=prom_lookup" -c "$WORK/promoted/$name.cpp" -o "$WORK/obj/$name.prom.o"
-    grep -oE 'case 0x[0-9a-f]+ULL' "$ROOT/generated/aot/$name.cpp" | sed 's/case 0x//;s/ULL//' > "$WORK/obj/$name.keys"
+    grep -oE 'case 0x[0-9a-f]+ULL' "$ROOT/build/generated/aot/$name.cpp" | sed 's/case 0x//;s/ULL//' > "$WORK/obj/$name.keys"
     xcrun clang++ "$WORK/obj/driver.o" "$WORK/obj/$name.orig.o" "$WORK/obj/$name.prom.o" "$WORK/obj/math.a" -o "$WORK/obj/$name.test"
     printf '%s ' "$name"; "$WORK/obj/$name.test" "$WORK/obj/$name.keys" "$TRIALS"
     rm -f "$WORK/obj/$name.orig.o" "$WORK/obj/$name.prom.o" "$WORK/obj/$name.test"
