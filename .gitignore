@@ -7,6 +7,8 @@
 *.zip
 Asphalt6Data/
 NativeArtwork/
+# HD background images: kept locally, not published for now.
+/artwork/
 
 # Local toolchains and caches
 .DS_Store

@@ -2,7 +2,7 @@
 
 让 2011 年发布的《狂野飙车 6》（Asphalt 6: Adrenaline，iOS 1.3.2）在现代 iPhone（arm64，iOS 17 及以上）上运行的兼容层。
 
-本仓库**只包含兼容层代码**和一组可选的高清背景图片（`artwork/`，见下文），不包含游戏程序、原版美术或音频。使用者需要自备合法取得的游戏 IPA，在自己的 Mac 上构建出可安装的 App。
+本仓库**只包含兼容层代码**，不包含游戏程序、原版美术或音频。使用者需要自备合法取得的游戏 IPA，在自己的 Mac 上构建出可安装的 App。
 
 ## 兼容层提供的能力
 
@@ -86,7 +86,7 @@ python3 scripts/buildGame.py /path/to/Asphalt6.ipa
 
 - `Asphalt6ARM64.ipa`：未签名的 App，用 SideStore、AltStore 等工具签名安装；
 - `Asphalt6Data.zip`：游戏资源包；
-- `NativeArtwork.zip`：高清背景包（可选安装），由 `artwork/` 中的图片校验后打包。
+- `NativeArtwork.zip`：高清背景包（可选安装），仅当 `artwork/` 中放有高清图片时生成，图片逐个校验后打包。
 
 可选参数：
 
@@ -126,7 +126,7 @@ python3 scripts/buildGame.py /path/to/Asphalt6.ipa
 
 没有这个压缩包、或其中某张图缺失或损坏时，对应画面自动使用游戏原版背景，不影响运行。
 
-> 高清背景包中的图片以游戏原版背景为基础，使用 GPT Image 2 重绘成 16:9 画幅，其画面内容与美术设计归 Gameloft 所有。图片存放在仓库的 `artwork/` 目录，构建时自动打包为 `NativeArtwork.zip`。
+> 高清背景包中的图片以游戏原版背景为基础，使用 GPT Image 2 重绘成 16:9 画幅，其画面内容与美术设计归 Gameloft 所有。这些图片暂不随仓库发布；兼容层已内置每张图片的校验值，把图片放进 `artwork/` 目录后，构建时会校验并打包为 `NativeArtwork.zip`。
 
 ## 目录结构
 
@@ -137,7 +137,7 @@ python3 scripts/buildGame.py /path/to/Asphalt6.ipa
 | `host/tests/` | 兼容层的独立测试 |
 | `aot/runtime/` | 翻译后程序所依赖的运行时：寄存器布局、内存访问、调度接口 |
 | `aot/math/` | 与 ARMv7 浮点逐位一致的软件浮点库（源自 QEMU SoftFloat） |
-| `artwork/` | 高清背景图片，构建时打包为 `NativeArtwork.zip` |
+| `artwork/` | 高清背景图片（不提交），存在时构建会打包为 `NativeArtwork.zip` |
 | `scripts/buildGame.py` | 一键构建入口 |
 | `scripts/as6build/` | 构建各阶段的实现与校验数据 |
 | `generated/` | 构建时生成，不提交 |
@@ -159,4 +159,4 @@ python3 scripts/buildGame.py /path/to/Asphalt6.ipa
 
 - 兼容层代码：[MIT 许可证](LICENSE)（`aot/math/` 除外）。
 - `aot/math/`：源自 QEMU 的 SoftFloat 实现，保留原有的 SoftFloat-2a / BSD / GPL-2.0-or-later 混合许可，详见 `aot/math/NOTICE.md` 与 `aot/math/vendor/licenses/`。
-- 《狂野飙车 6》（Asphalt 6: Adrenaline）的游戏程序、美术、音频及相关商标归 Gameloft 所有。本仓库不包含游戏程序、原版美术与音频；`artwork/` 中基于原版背景重绘的高清图片，其画面内容与美术设计同样归 Gameloft 所有。
+- 《狂野飙车 6》（Asphalt 6: Adrenaline）的游戏程序、美术、音频及相关商标归 Gameloft 所有。本仓库不包含游戏程序、原版美术与音频；基于原版背景重绘的高清图片，其画面内容与美术设计同样归 Gameloft 所有。

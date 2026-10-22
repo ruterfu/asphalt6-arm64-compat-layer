@@ -15,7 +15,8 @@ Stages (each verified against pinned hashes before the next one runs):
   5. package   link and write the unsigned IPA
 
 Outputs in dist/: Asphalt6ARM64.ipa (unsigned, sign it with SideStore or
-similar), Asphalt6Data.zip and NativeArtwork.zip.
+similar), Asphalt6Data.zip and, when artwork/ holds the HD images,
+NativeArtwork.zip.
 """
 import argparse
 import hashlib
@@ -141,7 +142,10 @@ def main():
     DIST.mkdir(exist_ok=True)
     package.package(build, app, data, DIST, log=log)
     zip_resources(WORK / 'Asphalt6Data', DIST / 'Asphalt6Data.zip')
-    artwork.package(DIST / 'NativeArtwork.zip', log=log)
+    if artwork.SOURCE.is_dir():
+        artwork.package(DIST / 'NativeArtwork.zip', log=log)
+    else:
+        log('artwork: artwork/ not found, NativeArtwork.zip skipped')
     log('done: sign and install dist/Asphalt6ARM64.ipa with SideStore, then copy '
         'dist/Asphalt6Data.zip (and optionally dist/NativeArtwork.zip) into the app\'s folder in Files')
 
