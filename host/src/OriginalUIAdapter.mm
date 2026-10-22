@@ -5,12 +5,16 @@
 #include "OriginalUIHostMetrics.hpp"
 #include "CareerStarLayout.hpp"
 #include <array>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <map>
 #include <mutex>
 #include <string>
 #include <vector>
+
+// Horizontal stretch of the original canvas (HLE_uikit.m); 1 when unknown.
+extern "C" double AS6CanvasHorizontalStretch(void);
 
 extern "C" gva_t GuestGLView(void);
 extern "C" BOOL GuestDiagnosticSnapshotLockHeld(GuestVM *);
@@ -33,23 +37,30 @@ struct Node {
     unsigned nextResolve=0;
 };
 struct Group { std::vector<Node> nodes; };
-struct MenuControl { Node node;double physicalDX=0;double uniformScale=1;bool readyLogged=false; };
+struct MenuControl { Node node;double physicalDX=0;double uniformScale=1;bool readyLogged=false;double physicalDY=0;bool unstretch=false; };
+// A node scaled about a fixed point of its own art (local twips).
+struct PivotControl { Node node;P pivot{};double sx=1,sy=1; };
 struct Mapping {
     H hostToStage,stageToHost;
     bool plane=false;
     Rect stageClip{};
     double roundTripPixels=0;
 };
-enum class Kind { Unknown, Loading, Menu, Race, TrackPlane, CareerSelection };
+enum class Kind { Unknown, Loading, Menu, Race, TrackPlane, CareerSelection, PauseMenu, RaceHud, Multiplayer, Paint, Tuning };
 struct Movie {
     std::uint32_t handler=0,root=0,definition=0,context=0;
     Kind kind=Kind::Unknown;
     Node gameloftLive{"mega_mc.btn_GLIVE"};
     Node careerStars{"star_career"};
+    Node carInfo{"mega_mc.car_info_stuff"},carInfoBar{"mega_mc.car_info_stuff.low_bar"},carInfoBackdrop;
     bool careerStarsReadyLogged=false;
     bool gameloftLiveHiddenLogged=false;
     std::vector<Group> groups;
     std::vector<MenuControl> menuControls;
+    // Round buttons narrowed back to their authored shape on the stretched canvas.
+    std::vector<MenuControl> roundButtons;
+    bool roundButtonsDiscovered=false;
+    std::vector<PivotControl> pivotControls;
     unsigned advances=0;
     bool discoveryDone=false,hasAdvanced=false;
     std::uint32_t manager=0,rayManager=0;
@@ -69,6 +80,10 @@ struct Movie {
 };
 struct State {
     std::uint32_t scratch=0;
+    // Car selection's career summary (cash, total, stars) as last placed, in
+    // stage coordinates normalised to 0..1, so the tuning shop matches it exactly.
+    std::array<M,3> summary{};
+    bool summaryValid=false;
     std::map<std::uint32_t,Movie> movies;
     unsigned logs=0;
     unsigned metricsRejectLogs=0;
@@ -128,12 +143,18 @@ bool restore(GuestVM *vm,State &s,Node &n) {
 bool restoreMovie(GuestVM *vm,State &s,Movie &m) {
     for(auto &g:m.groups)for(auto &n:g.nodes)if(!restore(vm,s,n))return false;
     for(auto &control:m.menuControls)if(!restore(vm,s,control.node))return false;
+    for(auto &control:m.roundButtons)if(!restore(vm,s,control.node))return false;
+    for(auto &control:m.pivotControls)if(!restore(vm,s,control.node))return false;
     if(!restore(vm,s,m.careerStars))return false;
+    if(!restore(vm,s,m.carInfoBar))return false;
+    if(!restore(vm,s,m.carInfoBackdrop))return false;
+    if(!restore(vm,s,m.carInfo))return false;
     return true;
 }
 bool resolve(GuestVM *vm,State &s,Movie &m,Node &n) {
     if(n.object){std::array<float,6> current{};if(local(vm,n,current))return true;n.object=0;n.shifted=false;n.affineApplied=false;}
-    if(m.advances<n.nextResolve)return false;
+    // A node without a path is located by its owner (e.g. unnamed art).
+    if(n.path.empty()||m.advances<n.nextResolve)return false;
     n.object=find(vm,s,m.handler,n.path);
     if(!n.object){n.nextResolve=m.advances+120;return false;}
     if(!word(vm,n.object,n.vtable)||!word(vm,n.object+0x44,n.name)){n.object=0;return false;}
@@ -184,12 +205,33 @@ void discoverSelectionControls(GuestVM *vm,State &s,Movie &m) {
                          "mega_mc.btn_previous_vehicle","mega_mc.btn_next_vehicle"};
     if(!find(vm,s,m.handler,"mega_mc.car_name_txt"))return;
     for(const char *path:paths)if(!find(vm,s,m.handler,path))return;
-    const double offsets[]={20.,20.,20.,20.,-20.};
+    // The vehicle arrows also move 40 px inwards and 20 px up. Once the career
+    // summary loses the stretch, its cash and total lines move left to the
+    // stars' left edge.
+    const double offsets[]={-27.,-11.,20.,40.,-40.};
     const double scales[]={.9,.9,.9,1.,1.};
-    for(unsigned i=0;i<5;++i)m.menuControls.push_back({{paths[i]},offsets[i],scales[i]});
+    const double rises[]={0.,0.,0.,-20.,-20.};
+    // The career summary (first three) also loses the canvas stretch.
+    for(unsigned i=0;i<5;++i)m.menuControls.push_back({{paths[i]},offsets[i],scales[i],false,rises[i],i<3});
+}
+// Back, info and skip buttons are drawn at 80% of their authored size.
+constexpr double RoundButtonScale=.8;
+// The canvas stretch makes round buttons oval; scaling their x axis by its
+// inverse restores the authored shape. 1 when the screen is not wider.
+double roundButtonXScale() {
+    const double stretch=AS6CanvasHorizontalStretch();
+    return std::isfinite(stretch)&&stretch>1.001&&stretch<3?1/stretch:1;
+}
+void discoverRoundButtons(GuestVM *vm,State &s,Movie &m) {
+    if(m.roundButtonsDiscovered||m.advances%120!=1)return;
+    m.roundButtonsDiscovered=true;
+    for(const char *path:{"mega_mc.btn_i","mega_mc.btn_free_view","mega_mc.btn_color","mega_mc.btn_tunning"})
+        if(find(vm,s,m.handler,path))m.roundButtons.push_back({{path},0.,RoundButtonScale});
+    // The race button is only made round again.
+    if(find(vm,s,m.handler,"mega_mc.btn_race"))m.roundButtons.push_back({{"mega_mc.btn_race"},0.,1.});
 }
 bool identify(GuestVM *vm,State &s,Movie &m) {
-    if(m.kind!=Kind::Unknown)return m.kind==Kind::Loading||m.kind==Kind::CareerSelection||m.kind==Kind::Menu;
+    if(m.kind!=Kind::Unknown)return m.kind==Kind::Loading||m.kind==Kind::CareerSelection||m.kind==Kind::Menu||m.kind==Kind::PauseMenu||m.kind==Kind::RaceHud||m.kind==Kind::Multiplayer||m.kind==Kind::Paint||m.kind==Kind::Tuning;
     if(m.discoveryDone)return false;
     m.discoveryDone=true;
     // Preserve the current Career/Loading scope. The one additional menu
@@ -205,8 +247,48 @@ bool identify(GuestVM *vm,State &s,Movie &m) {
         for(const char *p:paths)single(m,p);
     } else if(find(vm,s,m.handler,"mega_mc.btn_back")) {
         m.kind=Kind::Menu;single(m,"mega_mc.btn_back");
+    } else if(find(vm,s,m.handler,"menu_main.resume_btn")) {
+        m.kind=Kind::PauseMenu;
+        // Wide buttons of the pause and options pages (applyPauseButtons relies on
+        // this order: 8 buttons, then the question dialog).
+        for(const char *p:{"menu_main.resume_btn","menu_main.request_btn","menu_main.option_btn","menu_main.request2_btn",
+                           "menu_main_option.control_btn","menu_main_option.video_btn","menu_main_option.audio_btn",
+                           "menu_main_option.help_btn"})single(m,p);
+        // The question dialog's content (not its full-screen dimmer).
+        for(const char *p:{"menu_question.Question_txt","menu_question.no_btn","menu_question.btn_exception_name"})single(m,p);
+        m.groups.push_back({{Node{}}}); // question frame: unnamed, bound in applyPauseButtons
+        // Round Back buttons of the options pages: round again, then 80%.
+        const double round=RoundButtonScale*roundButtonXScale();
+        for(const char *p:{"menu_main_option.back_btn","menu_controls.component_controls.back_btn",
+                           "menu_custom_controls.back_custom_controls_btn","menu_help.component_help.back_btn",
+                           "menu_sound.component_sound.back_btn","menu_video.component_video.back_btn"})
+            m.pivotControls.push_back({{p},{1158,1190},round,RoundButtonScale});
+    } else if(find(vm,s,m.handler,"menu_1.btn_back_main")) {
+        m.kind=Kind::Multiplayer;
+        // Back of every multiplayer page; they share one authored corner.
+        for(const char *p:{"menu_1.btn_back_main","menu_2.btn_back_main","menu_3.btn_back","menu_4.btn_back_connectionType",
+                           "menu_5.btn_back_host","menu_6.btn_back_host","menu_7.btn_back_join","menu_8.btn_back_join",
+                           "menu_9.btn_back_lobby","menu_10.btn_back_loggin","menu_11.btn_back_search","menu_12.btn_back_leaderboard",
+                           "menu_13.btn_back_leadSelect","menu_15.btn_back_academy","menu_16.btn_back_invite","menu_17.btn_back_search",
+                           "menu_19.btn_back_leaderboard","menu_21.btn_back_loggin"})single(m,p);
+    } else if(find(vm,s,m.handler,"color_menu")&&find(vm,s,m.handler,"btn_decals")) {
+        // Paint shop: round buttons first, then the colour grids.
+        m.kind=Kind::Paint;
+        for(const char *p:{"btn_color","btn_custom_color","btn_decals","btn_tunning","color_menu","custom_color_menu"})single(m,p);
+    } else if(find(vm,s,m.handler,"menu_tunning_shop")&&find(vm,s,m.handler,"txt_career_cash")) {
+        // Tuning shop: the career summary (as on the car selection page), the
+        // category tabs and parts grid, then the stats panel and its frame.
+        m.kind=Kind::Tuning;
+        for(const char *p:{"txt_number_stars","txt_total_career","txt_career_cash",
+                           "btn_tunning_category_engine","btn_tunning_category_handling","btn_tunning_category_nitro",
+                           "btn_tunning_category_sponsor","menu_tunning_shop"})single(m,p);
+        for(const char *p:{"txt_stat_name","stat_num_","stats_bar_"})for(int i=1;i<=6;++i)single(m,(std::string(p)+char('0'+i)).c_str());
+        m.groups.push_back({{Node{}}}); // stats panel frame: unnamed, bound in AS6OriginalUIApply
+    } else if(find(vm,s,m.handler,"hud.mc_touchToSkip.btn_skip")) {
+        m.kind=Kind::RaceHud;
+        for(const char *p:{"hud.mc_touchToSkip.btn_skip","menu_Tutorial.btn_next"})single(m,p);
     }
-    return m.kind==Kind::Loading||m.kind==Kind::CareerSelection||m.kind==Kind::Menu;
+    return m.kind==Kind::Loading||m.kind==Kind::CareerSelection||m.kind==Kind::Menu||m.kind==Kind::PauseMenu||m.kind==Kind::RaceHud||m.kind==Kind::Multiplayer||m.kind==Kind::Paint||m.kind==Kind::Tuning;
 }
 
 Movie *movie(GuestVM *vm,State &s,std::uint32_t handler) {
@@ -415,31 +497,67 @@ bool applyGroup(GuestVM *vm,State &s,Movie &m,Group &group,const Mapping &map,Re
 }
 bool applyMenuTranslation(GuestVM *vm,State &s,Movie &m,Node &n,
                           const AS6OriginalUIHostMetrics &host,const Mapping &mapping,
-                          double physicalDX,const char *label,bool &readyLogged,double uniformScale=1) {
+                          double physicalDX,const char *label,bool &readyLogged,double uniformScale=1,
+                          double xScale=1,double physicalDY=0) {
     if(!std::isfinite(uniformScale)||uniformScale<=0||uniformScale>1)return false;
+    if(!std::isfinite(xScale)||xScale<=0||xScale>1)return false;
     std::array<float,6>current{},world{};std::uint32_t pointer=0;
     if(!local(vm,n,current)||!call(vm,WorldMatrix,{n.object},&pointer)||!read(vm,pointer,world.data(),24))return false;
     M invLocal,invParent;if(!inverse(matrix(current.data()),invLocal))return false;
     const auto parent=multiply(matrix(world.data()),invLocal);if(!inverse(parent,invParent))return false;
     const double hostDX=physicalDX/host.windowScreenScale;
     const P origin{host.windowBoundsPoints[0]+host.windowBoundsPoints[2]*.5,host.windowBoundsPoints[1]+host.windowBoundsPoints[3]*.5};P a,b;
-    if(!mapping.hostToStage.project(origin,a)||!mapping.hostToStage.project({origin.x+hostDX,origin.y},b))return false;
+    const double hostDY=physicalDY/host.windowScreenScale;
+    if(!mapping.hostToStage.project(origin,a)||!mapping.hostToStage.project({origin.x+hostDX,origin.y+hostDY},b))return false;
     const P stageDelta{b.x-a.x,b.y-a.y},delta=vector(invParent,stageDelta);
     const auto base=canonicalLocal(n,current);auto next=base;
     // Keep each authored origin. Only the three selection summary branches
     // reduce their text/icon axes; Back and arrows retain exact linear floats.
     if(uniformScale!=1)for(unsigned i:{0u,1u,3u,4u})next[i]=float(double(base[i])*uniformScale);
+    // Horizontal-only scale (a, b produce x) undoes the canvas stretch.
+    if(xScale!=1)for(unsigned i:{0u,1u})next[i]=float(double(next[i])*xScale);
     next[2]+=float(delta.x);next[5]+=float(delta.y);
     if(!std::isfinite(next[2])||!std::isfinite(next[5]))return false;
     const bool same=current[0]==next[0]&&current[1]==next[1]&&current[3]==next[3]&&current[4]==next[4]&&
         std::abs(double(current[2])-next[2])<.001&&std::abs(double(current[5])-next[5])<.001;
     if(!same&&!set(vm,s,n,next))return false;
-    n.base=base;n.applied=same?current:next;n.shifted=n.applied!=n.base;n.affineApplied=n.shifted;n.installedAffine={uniformScale,0,(1-uniformScale)*base[2]+delta.x,0,uniformScale,(1-uniformScale)*base[5]+delta.y};
+    n.base=base;n.applied=same?current:next;n.shifted=n.applied!=n.base;n.affineApplied=n.shifted;n.installedAffine={uniformScale*xScale,0,(1-uniformScale*xScale)*base[2]+delta.x,0,uniformScale,(1-uniformScale)*base[5]+delta.y};
     if(!readyLogged){readyLogged=true;char line[640];std::snprintf(line,sizeof(line),
         "[original-ui-%s] path=%s handler=%#x requested_physical_px=(%.0f,0) window_screen_scale=%.6f Host_delta=(%.6f,0) stage_delta=(%.6f,%.6f) local_delta=(%.6f,%.6f) uniform_scale=%.6f linear_floats_unchanged=%d",
         label,n.path.c_str(),m.handler,physicalDX,host.windowScreenScale,hostDX,stageDelta.x,stageDelta.y,delta.x,delta.y,uniformScale,uniformScale==1);GuestRawLog(line);GuestTrace(vm,@"%s",line);}
     return !GuestHasStopRequest(vm);
 }
+// Unnamed art is reached through its parent's display list, which is depth
+// ordered: the list holding the named neighbours `first` and `second` as
+// consecutive entries gives the entry spacing, and the wanted child lies
+// `offset` entries from `first`.
+std::uint32_t displayListEntry(GuestVM *vm,State &s,Movie &m,const char *parentPath,const char *firstPath,
+                               const char *secondPath,int offset) {
+    // An empty parent path is the movie's root.
+    const auto parent=*parentPath?find(vm,s,m.handler,parentPath):m.root,first=find(vm,s,m.handler,firstPath),
+        second=find(vm,s,m.handler,secondPath);
+    if(!parent||!first||!second)return 0;
+    std::uint32_t words[128]{};if(!read(vm,parent,words,sizeof(words)))return 0;
+    for(std::uint32_t list:words){
+        if(list<0x1000||list&3)continue;
+        std::uint32_t entries[128]{};if(!read(vm,list,entries,sizeof(entries)))continue;
+        for(int i=0;i<128;++i)if(entries[i]==first)for(int j=i+1;j<128&&j<=i+8;++j)if(entries[j]==second){
+            const int at=i+offset*(j-i);if(at<0||at>=128)break;
+            const std::uint32_t child=entries[at];std::uint32_t vt=0,matrixAt=0;float m6[6]{};
+            if(child&&word(vm,child,vt)&&vt&&word(vm,child+0x4c,matrixAt)&&read(vm,matrixAt,m6,24))return child;
+            break;
+        }
+    }
+    return 0;
+}
+// Binds an unnamed node (empty path) to `object` once it is found.
+void bindUnnamed(GuestVM *vm,Node &n,std::uint32_t object) {
+    if(n.object||!object)return;
+    n=Node{};n.object=object;
+    if(!word(vm,object,n.vtable)||!word(vm,object+0x44,n.name))n.object=0;
+}
+bool applyNodeStageAffine(GuestVM *vm,State &s,Movie &m,Node &n,const M &stageAffine,unsigned &applied,unsigned &changed,
+                          double sx=0,double sy=0,double dx=0,double dy=0);
 bool applyBack20(GuestVM *vm,State &s,Movie &m,const AS6OriginalUIHostMetrics &host,bool metricsReady) {
     const auto pending=[&](const char *reason){
         if(m.backRejectLogs++<3){char line[256];std::snprintf(line,sizeof(line),"[original-ui-back] pending handler=%#x reason=%s; original Back retained",m.handler,reason);GuestRawLog(line);}
@@ -451,12 +569,71 @@ bool applyBack20(GuestVM *vm,State &s,Movie &m,const AS6OriginalUIHostMetrics &h
     if(!map2D(vm,s,m,host,scale,driver,mapping))return pending(m.mappingReason);
     if(m.groups.size()!=1||m.groups[0].nodes.size()!=1)return false;
     auto &n=m.groups[0].nodes[0];if(!resolve(vm,s,m,n))return pending("Back instance");
-    if(!applyMenuTranslation(vm,s,m,n,host,mapping,20.,"back",m.backReadyLogged))return false;
+    const double round=roundButtonXScale();
+    if(!applyMenuTranslation(vm,s,m,n,host,mapping,20.,"back",m.backReadyLogged,RoundButtonScale,round))return false;
+    for(auto &button:m.roundButtons){
+        if(!resolve(vm,s,m,button.node)){if(!restore(vm,s,button.node))return false;continue;}
+        if(!applyMenuTranslation(vm,s,m,button.node,host,mapping,0.,"round-button",button.readyLogged,button.uniformScale,round))return false;
+    }
+    // Car selection: the stats panel back to its authored 3:2 shape, about the
+    // stage centre; its full-width backdrop and bottom bar keep their width. The
+    // backdrop is unnamed: depth 1, six entries before tf4 (then tf3).
+    float stage[4]{};
+    if(!read(vm,m.definition+0xb4,stage,sizeof(stage)))return false;
+    const double cx=(double(stage[0])+stage[1])*.5;unsigned applied=0,changed=0;
+    if(std::isfinite(cx)&&(!applyNodeStageAffine(vm,s,m,m.carInfo,M{round,0,(1-round)*cx,0,1,0},applied,changed)||
+       !applyNodeStageAffine(vm,s,m,m.carInfoBar,M{1/round,0,(1-1/round)*cx,0,1,0},applied,changed)))return false;
+    if(!m.carInfoBackdrop.object)bindUnnamed(vm,m.carInfoBackdrop,
+        displayListEntry(vm,s,m,"mega_mc.car_info_stuff","mega_mc.car_info_stuff.tf4","mega_mc.car_info_stuff.tf3",-6));
+    if(std::isfinite(cx)&&!applyNodeStageAffine(vm,s,m,m.carInfoBackdrop,M{1/round,0,(1-1/round)*cx,0,1,0},applied,changed))return false;
     for(auto &control:m.menuControls){
         if(!resolve(vm,s,m,control.node)){if(!restore(vm,s,control.node))return false;continue;}
-        if(!applyMenuTranslation(vm,s,m,control.node,host,mapping,control.physicalDX,"selection-control",control.readyLogged,control.uniformScale))return false;
+        if(!applyMenuTranslation(vm,s,m,control.node,host,mapping,control.physicalDX,"selection-control",control.readyLogged,control.uniformScale,control.unstretch?round:1,control.physicalDY))return false;
+    }
+    const double width=double(stage[1])-stage[0],height=double(stage[3])-stage[2];
+    if(m.menuControls.size()>=3&&width>0&&height>0){
+        const M unit{1/width,0,-stage[0]/width,0,1/height,-stage[2]/height};
+        bool valid=true;
+        for(size_t i=0;i<3&&valid;++i){
+            std::array<float,6> world{};std::uint32_t pointer=0;
+            valid=m.menuControls[i].node.object&&call(vm,WorldMatrix,{m.menuControls[i].node.object},&pointer)&&read(vm,pointer,world.data(),24);
+            if(valid)s.summary[i]=multiply(unit,matrix(world.data()));
+        }
+        if(valid)s.summaryValid=true;
     }
     return !GuestHasStopRequest(vm);
+}
+// Applies an affine given in movie stage coordinates to a node. A translation
+// the movie's own script writes later is kept: the known prefix is stripped
+// before the affine is applied again.
+// With sx/sy instead, each node is scaled about its own stage origin, then
+// moved by (dx, dy) on the stage.
+bool applyNodeStageAffine(GuestVM *vm,State &s,Movie &m,Node &n,const M &stageAffine,unsigned &applied,unsigned &changed,
+                          double sx,double sy,double dx,double dy) {
+    {
+        if(!resolve(vm,s,m,n))return true;
+        std::array<float,6>current{},world{};std::uint32_t pointer=0;
+        if(!local(vm,n,current)||!call(vm,WorldMatrix,{n.object},&pointer)||!read(vm,pointer,world.data(),24))return false;
+        M inv;if(!inverse(matrix(current.data()),inv))return false;
+        const auto parent=multiply(matrix(world.data()),inv);
+        const auto base=canonicalLocal(n,current);
+        M affine=stageAffine;
+        if(sx>0&&sy>0){const P o=apply(parent,{double(base[2]),double(base[5])});affine={sx,0,(1-sx)*o.x+dx,0,sy,(1-sy)*o.y+dy};}
+        M desired,prefix;if(!affineLocalInStage(matrix(base.data()),parent,affine,desired,prefix))return false;
+        const std::array<float,6>next={float(desired.a),float(desired.b),float(desired.tx),float(desired.c),float(desired.d),float(desired.ty)};
+        for(float f:next)if(!std::isfinite(f))return false;
+        bool same=true;for(unsigned i=0;i<6;++i)if(std::abs(double(next[i])-current[i])>(i==2||i==5?.001:1e-7))same=false;
+        if(!same){if(!set(vm,s,n,next))return false;++changed;}
+        n.base=base;n.applied=same?current:next;n.shifted=n.applied!=n.base;n.affineApplied=n.shifted;n.installedAffine=prefix;++applied;
+    }
+    return true;
+}
+// The same for a range of the movie's groups (first..last).
+bool applyStageAffine(GuestVM *vm,State &s,Movie &m,const M &stageAffine,unsigned &applied,unsigned &changed,
+                      double sx=0,double sy=0,size_t first=0,size_t last=SIZE_MAX,double dx=0) {
+    for(size_t g=first;g<m.groups.size()&&g<last;++g)for(auto &n:m.groups[g].nodes)
+        if(!applyNodeStageAffine(vm,s,m,n,stageAffine,applied,changed,sx,sy,dx))return false;
+    return true;
 }
 bool applyResourceForeground(GuestVM *vm,State &s,Movie &m,const AS6OriginalUIHostMetrics &host) {
     float stage[4]{};
@@ -468,24 +645,44 @@ bool applyResourceForeground(GuestVM *vm,State &s,Movie &m,const AS6OriginalUIHo
     if(width<=0||height<=0)return false;
     const M stageAffine{.9,0,.1*stage[0]+.05*width,0,1,0};
     unsigned applied=0,changed=0;
-    for(auto &group:m.groups)for(auto &n:group.nodes){
-        if(!resolve(vm,s,m,n))continue;
-        std::array<float,6>current{},world{};std::uint32_t pointer=0;
-        if(!local(vm,n,current)||!call(vm,WorldMatrix,{n.object},&pointer)||!read(vm,pointer,world.data(),24))return false;
-        M inv;if(!inverse(matrix(current.data()),inv))return false;
-        const auto parent=multiply(matrix(world.data()),inv);
-        const auto base=canonicalLocal(n,current);
-        M desired,prefix;if(!affineLocalInStage(matrix(base.data()),parent,stageAffine,desired,prefix))return false;
-        const std::array<float,6>next={float(desired.a),float(desired.b),float(desired.tx),float(desired.c),float(desired.d),float(desired.ty)};
-        for(float f:next)if(!std::isfinite(f))return false;
-        bool same=true;for(unsigned i=0;i<6;++i)if(std::abs(double(next[i])-current[i])>(i==2||i==5?.001:1e-7))same=false;
-        if(!same){if(!set(vm,s,n,next))return false;++changed;}
-        n.base=base;n.applied=same?current:next;n.shifted=n.applied!=n.base;n.affineApplied=n.shifted;n.installedAffine=prefix;++applied;
-    }
+    if(!applyStageAffine(vm,s,m,stageAffine,applied,changed))return false;
     if(applied&&!m.selectionReadyLogged){m.selectionReadyLogged=true;char line[640];
         std::snprintf(line,sizeof(line),"[foreground-ui] mode=horizontal5 kind=%u handler=%#x groups=%u changed=%u sx=0.900000 sy=1.000000 movie_stage=(%.3f,%.3f,%.3f,%.3f) side_inset_twips=%.3f stage_tx=%.3f stage_ty=0.000 Host=(%.2f,%.2f); background and Back untouched",
             unsigned(m.kind),m.handler,applied,changed,double(stage[0]),double(stage[1]),double(stage[2]),double(stage[3]),.05*width,stageAffine.tx,host.windowBoundsPoints[2],host.windowBoundsPoints[3]);
         GuestRawLog(line);GuestTrace(vm,@"%s",line);
+    }
+    return !GuestHasStopRequest(vm);
+}
+// Pause menu: its buttons and those of the options page are drawn at 70% width
+// about the stage centre, and the question dialog in its authored 3:2 shape
+// (its dimmer still covers the screen); the round Back buttons are scaled
+// about their own art (pivotControls).
+constexpr double PauseButtonWidth=.7;
+constexpr size_t PauseButtonGroups=8;
+bool applyPauseButtons(GuestVM *vm,State &s,Movie &m) {
+    float stage[4]{};
+    if(!read(vm,m.definition+0xb4,stage,sizeof(stage)))return false;
+    for(float f:stage)if(!std::isfinite(f))return false;
+    const double cx=(double(stage[0])+stage[1])*.5,qx=roundButtonXScale();
+    const M buttons{PauseButtonWidth,0,(1-PauseButtonWidth)*cx,0,1,0},question{qx,0,(1-qx)*cx,0,1,0};
+    // The dialog frame: unnamed, just before No (dimmer, frame, No, Yes, text).
+    auto &frame=m.groups.back().nodes.front();
+    if(!frame.object)bindUnnamed(vm,frame,displayListEntry(vm,s,m,"menu_question","menu_question.no_btn","menu_question.btn_exception_name",-1));
+    unsigned applied=0,changed=0;
+    if(!applyStageAffine(vm,s,m,buttons,applied,changed,0,0,0,PauseButtonGroups)||
+       !applyStageAffine(vm,s,m,question,applied,changed,0,0,PauseButtonGroups))return false;
+    for(auto &control:m.pivotControls){
+        auto &n=control.node;
+        if(!resolve(vm,s,m,n))continue;
+        std::array<float,6> current{};if(!local(vm,n,current))continue;
+        const auto base=canonicalLocal(n,current);
+        const M b=matrix(base.data()),k{control.sx,0,(1-control.sx)*control.pivot.x,0,control.sy,(1-control.sy)*control.pivot.y};
+        M inv;if(!inverse(b,inv))return false;
+        const M desired=multiply(b,k),prefix=multiply(desired,inv);
+        const std::array<float,6>next={float(desired.a),float(desired.b),float(desired.tx),float(desired.c),float(desired.d),float(desired.ty)};
+        for(float f:next)if(!std::isfinite(f))return false;
+        if(next!=current&&!set(vm,s,n,next))return false;
+        n.base=base;n.applied=next;n.shifted=next!=base;n.affineApplied=n.shifted;n.installedAffine=prefix;
     }
     return !GuestHasStopRequest(vm);
 }
@@ -538,11 +735,64 @@ extern "C" bool AS6OriginalUIApply(GuestVM *vm,std::uint32_t handler) {
     scaleAndDriver(vm,scale,driver); // Diagnostic only: layout uses native ratios and authored stage.
     if(!m->identifiedLog){m->identifiedLog=true;GuestTrace(vm,@"[original-ui] identified kind=%u handler=%#x root=%#x definition=%#x Host=(%.1f %.1f) safe=(%.4f %.4f %.4f %.4f) view=(%.1f %.1f) scale=%.2f driver=%#x revision=%llu",
         unsigned(m->kind),handler,m->root,m->definition,h.windowBoundsPoints[2],h.windowBoundsPoints[3],h.safeNormalizedRect[0],h.safeNormalizedRect[1],h.safeNormalizedRect[2],h.safeNormalizedRect[3],h.originalViewBoundsPoints[2],h.originalViewBoundsPoints[3],double(scale),driver,(unsigned long long)h.revision);}
-    if(m->kind==Kind::Menu){discoverSelectionControls(vm,s,*m);return applyBack20(vm,s,*m,h,metricsReady);}
-    if(m->kind==Kind::Loading||m->kind==Kind::CareerSelection){
-        if(!applyResourceForeground(vm,s,*m,h))return false;
-        return m->kind!=Kind::CareerSelection||applyCareerStars(vm,s,*m,h,metricsReady);
+    if(m->kind==Kind::Menu){discoverSelectionControls(vm,s,*m);discoverRoundButtons(vm,s,*m);return applyBack20(vm,s,*m,h,metricsReady);}
+    if(m->kind==Kind::PauseMenu)return applyPauseButtons(vm,s,*m);
+    if(m->kind==Kind::Multiplayer){
+        // Back buttons sit over the page titles: move them left by 6.5% of the stage.
+        float stage[4]{};
+        if(!read(vm,m->definition+0xb4,stage,sizeof(stage)))return false;
+        for(float f:stage)if(!std::isfinite(f))return false;
+        unsigned applied=0,changed=0;
+        return applyStageAffine(vm,s,*m,M{1,0,-.065*(double(stage[1])-stage[0]),0,1,0},applied,changed)&&!GuestHasStopRequest(vm);
     }
+    if(m->kind==Kind::Paint||m->kind==Kind::Tuning){
+        float stage[4]{};
+        if(!read(vm,m->definition+0xb4,stage,sizeof(stage)))return false;
+        for(float f:stage)if(!std::isfinite(f))return false;
+        const double cx=(double(stage[0])+stage[1])*.5,round=roundButtonXScale();
+        unsigned applied=0,changed=0;
+        if(m->kind==Kind::Paint)
+            return applyStageAffine(vm,s,*m,M{},applied,changed,RoundButtonScale*round,RoundButtonScale,0,4)&&
+                applyStageAffine(vm,s,*m,M{round,0,(1-round)*cx,0,1,0},applied,changed,0,0,4)&&!GuestHasStopRequest(vm);
+        const double width=double(stage[1])-stage[0],height=double(stage[3])-stage[2];
+        if(m->groups.size()!=27||!(width>0)||!(height>0))return restoreMovie(vm,s,*m);
+        // Tabs and parts grid back to their authored shape about their own
+        // origin; the stats panel (frame, names, values, bars) about its centre
+        // (stage x 931.5 of 1024). Full-width backgrounds keep their width.
+        for(size_t g=3;g<8;++g)
+            if(!applyNodeStageAffine(vm,s,*m,m->groups[g].nodes.front(),M{},applied,changed,round,1))return false;
+        auto &frame=m->groups.back().nodes.front();
+        if(!frame.object)bindUnnamed(vm,frame,displayListEntry(vm,s,*m,"","menu_tunning_shop","menu_sponsor",-2));
+        const double panel=stage[0]+width*931.5/1024;
+        if(!applyStageAffine(vm,s,*m,M{round,0,(1-round)*panel,0,1,0},applied,changed,0,0,8))return false;
+        // The career summary takes exactly the car selection's placement (both
+        // movies fill the screen), so it does not move between the two pages.
+        if(!s.summaryValid){for(size_t g=0;g<3;++g)for(auto &n:m->groups[g].nodes)if(!restore(vm,s,n))return false;return !GuestHasStopRequest(vm);}
+        const M fromUnit{width,0,stage[0],0,height,stage[2]};
+        const size_t source[3]={2,1,0}; // stars, total, cash <- car selection's cash, total, stars
+        for(size_t i=0;i<3;++i)for(auto &n:m->groups[i].nodes){
+            if(!resolve(vm,s,*m,n))continue;
+            std::array<float,6> current{},world{};std::uint32_t pointer=0;
+            if(!local(vm,n,current)||!call(vm,WorldMatrix,{n.object},&pointer)||!read(vm,pointer,world.data(),24))return false;
+            M invCurrent,invParent,invBase;if(!inverse(matrix(current.data()),invCurrent))return false;
+            const auto parent=multiply(matrix(world.data()),invCurrent);if(!inverse(parent,invParent))return false;
+            const auto base=canonicalLocal(n,current);if(!inverse(matrix(base.data()),invBase))return false;
+            const M desired=multiply(invParent,multiply(fromUnit,s.summary[source[i]]));
+            const std::array<float,6> next={float(desired.a),float(desired.b),float(desired.tx),float(desired.c),float(desired.d),float(desired.ty)};
+            for(float f:next)if(!std::isfinite(f))return false;
+            if(next!=current&&!set(vm,s,n,next))return false;
+            n.base=base;n.applied=next;n.shifted=next!=base;n.affineApplied=n.shifted;n.installedAffine=multiply(desired,invBase);
+        }
+        return !GuestHasStopRequest(vm);
+    }
+    if(m->kind==Kind::RaceHud){
+        // Skip / next: round again on the stretched canvas, then 80%.
+        unsigned applied=0,changed=0;
+        return applyStageAffine(vm,s,*m,M{},applied,changed,RoundButtonScale*roundButtonXScale(),RoundButtonScale)&&!GuestHasStopRequest(vm);
+    }
+    if(m->kind==Kind::Loading)return applyResourceForeground(vm,s,*m,h);
+    // Career selection sits on the in-room 3:2 monitor: authored layout.
+    if(m->kind==Kind::CareerSelection)return applyCareerStars(vm,s,*m,h,metricsReady);
     return restoreMovie(vm,s,*m);
 
 }

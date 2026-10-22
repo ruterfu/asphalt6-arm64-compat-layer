@@ -1,6 +1,7 @@
 #include "HDArtworkPack.hpp"
 #include "RetinaBackgroundAspect.hpp"
 #include "DecodedArtwork.hpp"
+#include "ArtVariants.hpp"
 #include "art_pins.hpp"
 #include <algorithm>
 #include <cmath>
@@ -37,6 +38,10 @@ static bool MaterializeImpl(Profile profile,const uint8_t*original,size_t origin
  error.clear();const Spec*s=nullptr;
  for(const auto&v:kSpecs)if(v.asset==static_cast<unsigned>(profile)){s=&v;break;}
  if(!s){error="unknown HD profile";return false;}
+ // A 2.2:1 version of the pinned art stands in with its own size/identity.
+ Spec wide_spec=*s;const char*wide_sha=nullptr;
+ const bool wide_art=as6_art_variant::WideOf(decoded,s->art_sha,wide_spec.art_w,wide_spec.art_h,wide_sha);
+ if(wide_art){wide_spec.art_sha=wide_sha;s=&wide_spec;}
  if(nominal.width!=s->nominal_w||nominal.height!=s->nominal_h||
     s->width!=2*nominal.width||s->height!=2*nominal.height){error="nominal phone bitmap contract mismatch";return false;}
  if(!std::isfinite(width)||!std::isfinite(height)||width<=0||height<=0){error="invalid Host size";return false;}
@@ -51,16 +56,19 @@ static bool MaterializeImpl(Profile profile,const uint8_t*original,size_t origin
  as6_background::Crop crop{};
  if(s->mode==2){
   const double photo_aspect=aspect*1.28;
-  const double logical_w=std::min(double(s->art_w),double(s->art_h)*16.0/9.0),logical_h=logical_w*9.0/16.0;
-  const double cw=photo_aspect>=16.0/9.0?logical_w:logical_h*photo_aspect;
-  const double ch=photo_aspect>=16.0/9.0?logical_w/photo_aspect:logical_h;
+  // The logical picture is the 16:9 composition, or the whole 2.2:1 version.
+  const double logical_w=wide_art?double(s->art_w):std::min(double(s->art_w),double(s->art_h)*16.0/9.0);
+  const double logical_h=wide_art?double(s->art_h):logical_w*9.0/16.0;
+  const double cw=photo_aspect>=logical_w/logical_h?logical_w:logical_h*photo_aspect;
+  const double ch=photo_aspect>=logical_w/logical_h?logical_w/photo_aspect:logical_h;
   crop={(s->art_w-cw)*.5,s->art_h-ch,cw,ch};
  }else{
-  const double logical_w=decoded?std::min(double(s->art_w),double(s->art_h)*16.0/9.0):double(s->art_w);
-  crop={(s->art_w-logical_w)*.5,0,logical_w,logical_w*9.0/16.0};
+  const double logical_w=wide_art?double(s->art_w):decoded?std::min(double(s->art_w),double(s->art_h)*16.0/9.0):double(s->art_w);
+  const double logical_h=wide_art?double(s->art_h):logical_w*9.0/16.0;
+  crop={(s->art_w-logical_w)*.5,0,logical_w,logical_h};
   const bool bottom=s->mode==0;
   crop.y=bottom?s->art_h-crop.height:(s->art_h-crop.height)*.5;
-  if(aspect>=16.0/9.0){const double ch=crop.width/aspect;crop.y+=bottom?crop.height-ch:(crop.height-ch)*.5;crop.height=ch;}
+  if(aspect>=logical_w/logical_h){const double ch=crop.width/aspect;crop.y+=bottom?crop.height-ch:(crop.height-ch)*.5;crop.height=ch;}
   else{const double cw=crop.height*aspect;crop.x+=(crop.width-cw)*.5;crop.width=cw;}
  }
  try{

@@ -6,7 +6,12 @@
 #include "PostEffectsTargetSize.hpp"
 #include <atomic>
 #include <cerrno>
+#include <cmath>
 #include <cstdio>
+#include <cstring>
+
+// Horizontal stretch of the original 3:2 canvas on this screen (1 when unknown).
+extern "C" double AS6CanvasHorizontalStretch(void);
 
 namespace {
 using namespace as6aot;
@@ -33,6 +38,10 @@ constexpr std::uint32_t GenericTexture = 0xb2254u;
 constexpr std::uint32_t RatioUVStart = 0x1d15acu;
 constexpr std::uint32_t RatioUVWidth = 0x1d15e0u;
 constexpr std::uint32_t RatioUVHeight = 0x1d1608u;
+// glitch::core::buildProjectionMatrixPerspectiveFov<float>(fovy, aspect, near, far)
+// and its infinite-far variant. Soft-float ABI: r0 result, r1 fovy, r2 aspect.
+constexpr std::uint32_t PerspectiveFov = 0x139504u;
+constexpr std::uint32_t PerspectiveFovInfinity = 0x1395c8u;
 
 bool SquareSurface(Context &ctx) {
     const auto width = load(ctx, Word(PostEffectsScreenExtent), 4);
@@ -209,6 +218,36 @@ Status FixedPostEffectsScreenRatio(Context &ctx, bool legacy, std::uint32_t stop
     return original(ctx, legacy, stop_pc, stop_thumb);
 }
 
+// The canvas is stretched horizontally to fill the screen. Building every
+// screen perspective with the real aspect (vertical FOV kept) widens the view
+// instead of stretching it; the camera frustum used for culling is built by
+// the same function, so it widens with it. Render-target cameras with other
+// aspects (square maps, reflections) are left unchanged.
+Status WidePerspective(Context &ctx, bool legacy, std::uint32_t stop_pc, bool stop_thumb) {
+    const auto pc = ctx.next_pc;
+    const auto original = AS6NativeProgramWithStartupRecovery()->lookup(pc, false);
+    if (!ctx.registers || ctx.register_size < layout::Size || ctx.isa_thumb ||
+        (pc != PerspectiveFov && pc != PerspectiveFovInfinity)) return ctx.status = InvalidState;
+    if ((!legacy && pc == stop_pc && ctx.isa_thumb == stop_thumb) || !ctx.budget)
+        return original(ctx, legacy, stop_pc, stop_thumb);
+    const double stretch = AS6CanvasHorizontalStretch();
+    const auto bits = std::uint32_t(read_bytes(ctx.registers, layout::r2, 4));
+    float aspect;
+    std::memcpy(&aspect, &bits, 4);
+    if (std::isfinite(stretch) && stretch > 1.001 && stretch < 3 &&
+        std::isfinite(aspect) && aspect > 1.3f && aspect < 1.8f) {
+        const float wide = float(aspect * stretch);
+        std::uint32_t wideBits;
+        std::memcpy(&wideBits, &wide, 4);
+        write_bytes(ctx.registers, layout::r2, 4, Word(wideBits));
+        static std::atomic<unsigned> logged{0};
+        if (logged.fetch_add(1) < 8)
+            std::fprintf(stderr, "[wide-view] perspective %#x aspect %.4f -> %.4f\n",
+                         pc, double(aspect), double(wide));
+    }
+    return original(ctx, legacy, stop_pc, stop_thumb);
+}
+
 Status PostEffectsTextureSize(Context &ctx, bool legacy, std::uint32_t stop_pc, bool stop_thumb) {
     const auto original = AS6NativeProgramWithStartupRecovery()->lookup(CreateTexture, false);
     if (!ctx.registers || ctx.register_size < layout::Size || ctx.isa_thumb ||
@@ -307,6 +346,7 @@ NativeFunction Lookup(std::uint32_t pc, bool thumb) {
     if (!thumb && pc >= RatioUVStart && pc <= RatioUVHeight && !(pc & 3u)) return SquarePostEffectsUV;
     if (!thumb && pc == CreateTexture) return PostEffectsTextureSize;
     if (!thumb && pc == SetPostEffectsScreenRatio) return FixedPostEffectsScreenRatio;
+    if (!thumb && (pc == PerspectiveFov || pc == PerspectiveFovInfinity)) return WidePerspective;
     if (!thumb && pc == SetCurrentMenu) return StoreMenuNavigation;
     if (!thumb && (pc == CreateStoreInstance || pc == IsStoreEnabled ||
                    pc == NativeGotoPopout || pc == BuyStore || pc == OpenAppStoreLink ||
@@ -328,7 +368,8 @@ bool Validate() {
         base->lookup(ReturnStoreToForeground, false) && base->lookup(CreateTexture, false) &&
         base->lookup(SetPostEffectsScreenRatio, false) && base->lookup(FlashTargetChoice, false) &&
         base->lookup(GenericTexture, false) && base->lookup(RatioUVStart, false) &&
-        base->lookup(RatioUVWidth, false) && base->lookup(RatioUVHeight, false);
+        base->lookup(RatioUVWidth, false) && base->lookup(RatioUVHeight, false) &&
+        base->lookup(PerspectiveFov, false) && base->lookup(PerspectiveFovInfinity, false);
 }
 const NativeModule Modules[] = {{0, 0x1ffffffffULL, Lookup}};
 const NativeProgram Program(Modules, 1, layout::Size, layout::pc);

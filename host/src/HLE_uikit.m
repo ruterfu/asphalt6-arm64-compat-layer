@@ -13,6 +13,7 @@
 #import <QuartzCore/QuartzCore.h>
 #import <UIKit/UIKit.h>
 #import <objc/runtime.h>
+#import <atomic>
 #import <errno.h>
 #import <stdio.h>
 #import <stdlib.h>
@@ -20,6 +21,7 @@
 #include <chrono>
 #include "SafeAreaCanvasGeometry.hpp"
 #include "OriginalUIHostMetrics.hpp"
+#include <cmath>
 
 static gva_t g_guestAppDelegate = 0;
 static UIWindow *g_hostWindow = nil;
@@ -194,6 +196,11 @@ extern "C" bool GuestCopyOriginalUIHostMetrics(AS6OriginalUIHostMetrics *out) {
     errno=savedErrno;return ready;
 }
 
+// Width stretch of the original landscape canvas (portrait bounds w x h shown
+// as h x w) to the full window; read by the perspective policy each frame.
+static std::atomic<double> g_canvasHorizontalStretch{1.0};
+extern "C" double AS6CanvasHorizontalStretch(void) { return g_canvasHorizontalStretch.load(std::memory_order_relaxed); }
+
 static void LayoutOriginalView(UIView *view, UIWindow *window) {
     UIView *container = view.superview;
     if (!view || !window || !container || (container != window && container.window != window)) return;
@@ -207,6 +214,10 @@ static void LayoutOriginalView(UIView *view, UIWindow *window) {
     const CGRect parentFull = [container convertRect:window.bounds fromView:window];
     const auto layout = as6canvas::layout(CanvasRect(view.bounds), CanvasRect(parentFull));
     if (!layout.valid) return;
+    const CGSize source = view.bounds.size, full = window.bounds.size;
+    if (source.width > 0 && source.height > 0 && full.width > full.height && full.height > 0)
+        g_canvasHorizontalStretch.store((full.width / full.height) / (source.height / source.width),
+                                        std::memory_order_relaxed);
     // Retain the established original quarter-turn and width/height scaling.
     // Bounds stay unchanged; UITouch locationInView: applies this exact inverse.
     const CGAffineTransform transform = CGAffineTransformMake(0, layout.b, layout.c, 0, 0, 0);

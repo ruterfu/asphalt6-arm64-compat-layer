@@ -1,5 +1,6 @@
 #include "UIBackgroundAspect.hpp"
 #include "DecodedArtwork.hpp"
+#include "ArtVariants.hpp"
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -42,12 +43,10 @@ std::vector<uint8_t> EncodeRLE(const uint8_t*header,const std::vector<uint8_t>&p
  }
  out.insert(out.end(),tail,tail+trailing);return out;
 }
-as6_background::Crop Cover(const ArtSpec&s,double aspect,bool grid){
- const double virtual_width=grid?1662.:s.width;
- const double cx=grid?831.:s.width*.5;
- const double w=std::min(virtual_width,double(s.height)*16./9.),h=w*9./16.;
- const double cw=aspect>=16./9.?w:h*aspect,ch=aspect>=16./9.?w/aspect:h;
- return {cx-cw*.5,(s.height-ch)*.5,cw,ch};
+as6_background::Crop Cover(const ArtSpec&s,double aspect){
+ const double w=s.width,h=s.height,art=w/h;
+ const double cw=aspect>=art?w:h*aspect,ch=aspect>=art?w/aspect:h;
+ return {(w-cw)*.5,(h-ch)*.5,cw,ch};
 }
 uint8_t Sample(const ArtView&v,const ArtSpec&s,double x,double y,unsigned c){
  x=std::max(0.,std::min(double(s.width-1),x-.5));y=std::max(0.,std::min(double(s.height-1),y-.5));
@@ -70,10 +69,14 @@ bool Materialize(Profile profile,const uint8_t*original,size_t original_size,
  ArtKind required[2];const size_t needed=RequiredArts(profile,required);
  if(!arts||art_count!=needed||!needed||needed>2){error="missing or extra art input";return false;}
  const ArtView*selected[5]={};
+ ArtSpec effective[5]={kArtSpecs[0],kArtSpecs[1],kArtSpecs[2],kArtSpecs[3],kArtSpecs[4]};
  for(size_t i=0;i<art_count;i++){
   const unsigned kind=static_cast<unsigned>(arts[i].kind);bool permitted=false;for(size_t j=0;j<needed;j++)permitted|=required[j]==arts[i].kind;
   if(kind>=5||!permitted||selected[kind]){error="unknown, duplicate or unrelated art kind";return false;}
-  const auto&a=kArtSpecs[kind];const auto*decoded=arts[i].decoded;
+  // A 2.2:1 version of the pinned art stands in with its own size/identity.
+  unsigned wide_w=0,wide_h=0;const char*wide_sha=nullptr;
+  if(as6_art_variant::WideOf(arts[i].decoded,kArtSpecs[kind].sha,wide_w,wide_h,wide_sha))effective[kind]={kind,wide_w,wide_h,wide_sha};
+  const auto&a=effective[kind];const auto*decoded=arts[i].decoded;
   const bool identity=decoded?decoded->matchesLegacy(a.sha,a.width,a.height)&&arts[i].top_bgra==decoded->data()&&arts[i].bytes==decoded->size():as6_background::Sha256(arts[i].top_bgra,arts[i].bytes)==a.sha;
   if(!arts[i].top_bgra||arts[i].bytes!=size_t(a.width)*a.height*4||!identity){error="AI art size or SHA mismatch";return false;}
   selected[kind]=&arts[i];
@@ -92,11 +95,12 @@ bool Materialize(Profile profile,const uint8_t*original,size_t original_size,
    pixel_bytes=decoded.data();
   }
   for(size_t i=0;i<s->patch_count;i++){
-   const Patch&p=s->patches[i];const ArtSpec&a=kArtSpecs[p.kind];const ArtView&v=*selected[p.kind];const auto crop=Cover(a,aspect,p.mirror_grid);if(!i)next.art_crop=crop;
+   const Patch&p=s->patches[i];const ArtSpec&a=effective[p.kind];const ArtView&v=*selected[p.kind];
+   const auto crop=Cover(a,aspect);if(!i)next.art_crop=crop;
    if(p.x0>=p.x1||p.y0>=p.y1||p.x1>s->width||p.y1>s->height){error="invalid compiled background mask";return false;}
    for(unsigned y=p.y0;y<p.y1;y++)for(unsigned x=p.x0;x<p.x1;x++){
     const double qx=(p.a*(x+.5)+p.c*(y+.5)+p.tx)/p.stage_w,qy=(p.b*(x+.5)+p.d*(y+.5)+p.ty)/p.stage_h;
-    const double ax=p.mirror_grid?831.-std::abs(qx-.5)*crop.width:crop.x+qx*crop.width,ay=crop.y+qy*crop.height;
+    const double ax=crop.x+qx*crop.width,ay=crop.y+qy*crop.height;
     const unsigned row=(s->descriptor&0x20)?y:s->height-1-y;const size_t offset=(size_t(row)*s->width+x)*4;
     for(unsigned c=0;c<4;c++)pixel_bytes[offset+c]=Sample(v,a,ax,ay,c);
    }
@@ -104,7 +108,7 @@ bool Materialize(Profile profile,const uint8_t*original,size_t original_size,
   if(s->type==10)next.original_layout_tga=EncodeRLE(original,decoded,original+rle_tail,original_size-rle_tail,s->width);
   char dimensions[128];std::snprintf(dimensions,sizeof(dimensions),"%u/%.17g/%.17g",s->asset,width,height);
   std::string key=std::string("ui-background-affine-v1:")+s->sha+":"+dimensions;
-  for(size_t i=0;i<needed;i++){const auto kind=static_cast<unsigned>(required[i]);const auto&v=*selected[kind];key+=std::string(":")+(v.decoded?v.decoded->cacheIdentity():std::string(kArtSpecs[kind].sha));}
+  for(size_t i=0;i<needed;i++){const auto kind=static_cast<unsigned>(required[i]);const auto&v=*selected[kind];key+=std::string(":")+(v.decoded?v.decoded->cacheIdentity():std::string(effective[kind].sha));}
   next.cache_key=as6_background::Sha256(reinterpret_cast<const uint8_t*>(key.data()),key.size());result=std::move(next);return true;
  }catch(const std::bad_alloc&){error="allocation failed";return false;}
 }

@@ -1,3 +1,4 @@
+#include "ArtVariants.hpp"
 #include "HDArtworkPack.hpp"
 #include "LoadingBackgroundAspect.hpp"
 #include "DecodedArtwork.hpp"
@@ -29,6 +30,10 @@ static bool MaterializeImpl(Profile profile,const uint8_t* original,size_t origi
  const uint8_t* art,size_t art_size,double width,double height,Result& result,std::string&error,const as6_background::DecodedArtwork* decoded){
  error.clear();const Spec *s=nullptr;for(const auto&candidate:kSpecs)if(candidate.asset==static_cast<unsigned>(profile)){s=&candidate;break;}
  if(!s){error="unknown loading asset";return false;}
+ // A 2.2:1 version of the pinned photo stands in with its own size/identity.
+ Spec wide_spec=*s;const char*wide_sha=nullptr;
+ const bool wide_art=as6_art_variant::WideOf(decoded,s->art_sha,wide_spec.art_w,wide_spec.art_h,wide_sha);
+ if(wide_art){wide_spec.art_sha=wide_sha;s=&wide_spec;}
  if(!std::isfinite(width)||!std::isfinite(height)||width<=0||height<=0){error="invalid Host size";return false;}
  const double aspect=width/height;if(!std::isfinite(aspect)||aspect<1||aspect>4){error="unsupported Host aspect";return false;}
  if(!original||original_size!=kOriginalBytes||!art||art_size!=size_t(s->art_w)*s->art_h*4){error="size mismatch";return false;}
@@ -40,9 +45,11 @@ static bool MaterializeImpl(Profile profile,const uint8_t* original,size_t origi
  // on stage23040x15360. Thus its true physical AR is HostAR*1.28, while
  // the retained information bar occupies the rest of the unchanged stage.
  const double photo_aspect=aspect*1.28;
- const double logical_w=std::min(double(s->art_w),double(s->art_h)*16.0/9.0),logical_h=logical_w*9.0/16.0;
- const double crop_w=photo_aspect>=16.0/9.0?logical_w:logical_h*photo_aspect;
- const double crop_h=photo_aspect>=16.0/9.0?logical_w/photo_aspect:logical_h;
+ // The logical picture is the 16:9 composition, or the whole 2.2:1 version.
+ const double logical_w=wide_art?double(s->art_w):std::min(double(s->art_w),double(s->art_h)*16.0/9.0);
+ const double logical_h=wide_art?double(s->art_h):logical_w*9.0/16.0;
+ const double crop_w=photo_aspect>=logical_w/logical_h?logical_w:logical_h*photo_aspect;
+ const double crop_h=photo_aspect>=logical_w/logical_h?logical_w/photo_aspect:logical_h;
  const as6_background::Crop crop{(s->art_w-crop_w)*.5,s->art_h-crop_h,crop_w,crop_h};
  try{
   const uint8_t *header=as6_hd_artwork::LoadingHeader();

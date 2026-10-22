@@ -17,6 +17,7 @@
 
 // Uses native canvas dimensions; no guest memory, GL call or screen override.
 extern "C" bool GuestBackgroundPhysicalSize(double *width, double *height);
+#include "ArtVariants.hpp"
 
 namespace {
 struct ErrnoScope { int value = errno; ~ErrnoScope() { errno = value; } };
@@ -160,6 +161,19 @@ static NSString *Candidate(NSString *path) {
     if (![Resolved(path) isEqualToString:Resolved(originalPath)]) return path;
     double width = 0, height = 0;
     if (!GuestBackgroundPhysicalSize(&width, &height)) return path;
+    // With the wide view, menu backgrounds sit on the 3:2 in-room monitor and
+    // are no longer stretched: take the plain centered 3:2 crop of the art.
+    // Title and loading screens are still drawn on the stretched canvas and
+    // keep the physical aspect.
+    const bool menuBackground = uiSpec || (spec && !strcmp(spec->art, "blue-menu-16x9-v1.jpg"));
+    // Full-screen phones (wider than 2:1) use each art's 2.2:1 version when the
+    // pack has one.
+    const bool wideArt = width / height > 2.0;
+    const auto artName = [wideArt](const char *name) -> const char * {
+        const char *wide = wideArt ? as6_art_variant::WideName(name) : nullptr;
+        return wide ? wide : name;
+    };
+    if (menuBackground) width = height * 1.5;
 
     NSMutableArray<NSString *> *dependencies=[NSMutableArray arrayWithObject:originalPath];
     if (uiSpec) {
@@ -167,14 +181,14 @@ static NSString *Candidate(NSString *path) {
         const size_t count=as6_ui_background::RequiredArts(uiSpec->profile,required);
         if (!count || count>2) return path;
         for (size_t i=0;i<count;++i) {
-            const char *name=UIArtName(required[i]);
+            const char *name=artName(UIArtName(required[i]));
             if (!name) return path;
             [dependencies addObject:[bundle stringByAppendingPathComponent:
                 [@"NativeArtwork" stringByAppendingPathComponent:[NSString stringWithUTF8String:name]]]];
         }
     } else {
         [dependencies addObject:[bundle stringByAppendingPathComponent:
-            [@"NativeArtwork" stringByAppendingPathComponent:[NSString stringWithUTF8String:spec->art]]]];
+            [@"NativeArtwork" stringByAppendingPathComponent:[NSString stringWithUTF8String:artName(spec->art)]]]];
     }
     char dimensions[128];
     snprintf(dimensions,sizeof(dimensions),"%.17g/%.17g",width,height);
@@ -208,7 +222,7 @@ static NSString *Candidate(NSString *path) {
         std::array<as6_background::DecodedArtwork,2> decodedArts;
         as6_ui_background::ArtView views[2]{};
         for (size_t i = 0; i < count; ++i) {
-            const char *name = UIArtName(required[i]);
+            const char *name = artName(UIArtName(required[i]));
             if (!name) return path;
             NSString *artPath = [bundle stringByAppendingPathComponent:[@"NativeArtwork" stringByAppendingPathComponent:[NSString stringWithUTF8String:name]]];
             NSData *art = [NSData dataWithContentsOfFile:artPath options:0 error:nil];
@@ -221,11 +235,12 @@ static NSString *Candidate(NSString *path) {
             (const uint8_t *)original.bytes, original.length, views, count,
             width, height, output, error);
     } else {
-        NSString *artPath = [bundle stringByAppendingPathComponent:[@"NativeArtwork" stringByAppendingPathComponent:[NSString stringWithUTF8String:spec->art]]];
+        const char *artFile = artName(spec->art);
+        NSString *artPath = [bundle stringByAppendingPathComponent:[@"NativeArtwork" stringByAppendingPathComponent:[NSString stringWithUTF8String:artFile]]];
         __attribute__((objc_precise_lifetime)) NSData *art = [NSData dataWithContentsOfFile:artPath options:0 error:nil];
         if (!art) return path;
         as6_background::DecodedArtwork decodedArt;
-        if (!as6_background::DecodeArtworkJpeg(spec->art,(const uint8_t*)art.bytes,art.length,decodedArt,error)) return path;
+        if (!as6_background::DecodeArtworkJpeg(artFile,(const uint8_t*)art.bytes,art.length,decodedArt,error)) return path;
         if (spec->retina) {
             materialized = as6_retina_background::MaterializeDecoded(static_cast<as6_retina_background::Profile>(spec->retina),
                 (const uint8_t *)original.bytes, original.length, decodedArt,

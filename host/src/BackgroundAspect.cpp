@@ -1,5 +1,6 @@
 #include "BackgroundAspect.hpp"
 #include "DecodedArtwork.hpp"
+#include "ArtVariants.hpp"
 #include "art_pins.hpp"
 #include <CommonCrypto/CommonDigest.h>
 #include <algorithm>
@@ -10,7 +11,7 @@
 
 namespace as6_background {
 namespace {
-constexpr unsigned kArtW=1672, kArtH=941;
+constexpr unsigned kArtW=1920, kArtH=1080;
 struct Spec {
  const char *name, *original_sha, *art_sha;
  unsigned width, height, descriptor, mask_x, mask_y, mask_w, mask_h;
@@ -69,7 +70,10 @@ static bool MaterializeImpl(Profile profile,const uint8_t* original,size_t origi
    spec=&blue;break;
  default:error="unknown profile";return false;
  }
- const Spec& s=*spec;
+ // A 2.2:1 version of the pinned art stands in with its own size/identity.
+ Spec chosen=*spec;const char*wide_sha=nullptr;
+ if(as6_art_variant::WideOf(decoded,spec->art_sha,chosen.art_width,chosen.art_height,wide_sha))chosen.art_sha=wide_sha;
+ const Spec& s=chosen;
  if(!std::isfinite(width)||!std::isfinite(height)||width<=0||height<=0) {error="invalid Host size";return false;}
  const double aspect=width/height;
  // Only explicit landscape phone profiles are qualified. Reject a transient
@@ -82,12 +86,15 @@ static bool MaterializeImpl(Profile profile,const uint8_t* original,size_t origi
  for(unsigned i=0;i<4;i++)h[i]=uint8_t(h[i]-i-1);
  if(h[0]!=0||h[1]!=0||h[2]!=2||U16(h+12)!=s.width||U16(h+14)!=s.height||h[16]!=32||h[17]!=s.descriptor) {error="unexpected TGA contract";return false;}
  if(s.mask_x+s.mask_w>s.width||s.mask_y+s.mask_h>s.height||18+size_t(s.width)*s.height*4>original_size) {error="invalid mask";return false;}
- // First define the AI composition's exact 16:9 logical rectangle, then cover
- // the real Host canvas uniformly. No original artwork is stretched.
- const double logical_w=decoded?std::min(double(s.art_width),double(s.art_height)*16.0/9.0):double(s.art_width);
- Crop crop{(s.art_width-logical_w)*.5,0,logical_w,logical_w*9.0/16.0};
+ // First define the AI composition's exact 16:9 logical rectangle (the whole
+ // picture for a 2.2:1 version), then cover the real Host canvas uniformly.
+ // No original artwork is stretched.
+ const bool wide_art=chosen.art_sha!=spec->art_sha;
+ const double logical_w=wide_art?double(s.art_width):decoded?std::min(double(s.art_width),double(s.art_height)*16.0/9.0):double(s.art_width);
+ const double logical_h=wide_art?double(s.art_height):logical_w*9.0/16.0;
+ Crop crop{(s.art_width-logical_w)*.5,0,logical_w,logical_h};
  crop.y=s.bottom_anchor?s.art_height-crop.height:(s.art_height-crop.height)*.5;
- if(aspect>=16.0/9.0) {
+ if(aspect>=logical_w/logical_h) {
    const double new_h=crop.width/aspect;
    crop.y+=s.bottom_anchor?crop.height-new_h:(crop.height-new_h)*.5;
    crop.height=new_h;

@@ -1,11 +1,11 @@
 #pragma once
 namespace as6_background {
-inline constexpr char kTitleArtBgraSha[]="85802fc3664fb9133a91465b04cb396f9cd01b6abad077fb8f5bb6a561422bd9";
+inline constexpr char kTitleArtBgraSha[]="5af71b58f39e68a59fc636a30488a67519a7970c24ce4824bae3bb6952e7abe6";
 // Filled from the independently generated Chinese composition before packaging.
 // An absent/unpinned asset retains the original Chinese resource.
-inline constexpr unsigned kChineseTitleArtWidth=1672, kChineseTitleArtHeight=940;
-inline constexpr unsigned kChineseTitleArtJpegBytes=458329;
-inline constexpr char kChineseTitleArtJpegSha[]="c6f68723000648e7b4b356863e1119df4583ff7fa7d1157e1c984c8a1038ce55";
-inline constexpr char kChineseTitleArtBgraSha[]="66dc37c53373c28ce9bcada9096e1b43de3eeb746cb9bca1c7f5a61d10602c56";
-inline constexpr char kBlueArtBgraSha[]="6e953afc3ea03e882d248b8366be02dec60fa42cfe9f1fcca290e715b6205569";
+inline constexpr unsigned kChineseTitleArtWidth=1920, kChineseTitleArtHeight=1080;
+inline constexpr unsigned kChineseTitleArtJpegBytes=764599;
+inline constexpr char kChineseTitleArtJpegSha[]="9affccde2aa0b16f504ead9672f6941730feccc710e466af919b7082620d9cd3";
+inline constexpr char kChineseTitleArtBgraSha[]="9affccde2aa0b16f504ead9672f6941730feccc710e466af919b7082620d9cd3";
+inline constexpr char kBlueArtBgraSha[]="41caccdab3486ec03f3daddcf78b91ffac0ad5c0b11889443c9cfa081db9f8ae";
 }

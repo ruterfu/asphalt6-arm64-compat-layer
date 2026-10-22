@@ -11,7 +11,7 @@ enum class Profile {
 };
 using Result=as6_background::Result;
 // Whole-file original layout output; photo-only sampling. The input Art is
-// pinned top-first BGRA with its exact source dimensions (334 is1672x940).
+// pinned top-first BGRA with its exact source dimensions.
 // Native final Host window dimensions, not guest UIScreen, are required.
 // Tight original flag raster and every byte outside the approved photo mask
 // are retained. New transparent AI header replaces the inseparable baked old
