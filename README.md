@@ -119,16 +119,6 @@ python3 scripts/buildGame.py /path/to/Asphalt6.ipa
 | 5 | `[5/6] Compiling AOT (about 1-2 hours)` | 用 CMake 编译 iOS 静态库（约 1–2 小时） |
 | 6 | `[6/6] Packaging` | 链接并输出未签名的安装包，打包资源 |
 
-每一步都会显示进度：下载、导出、转换、寄存器优化和编译有进度条，Ghidra 分析等无法预估进度的阶段显示已用时间；Ghidra 的输出保存在 `build/work/pcode/`，编译的完整输出保存在 `build/compile.log`。
-
-同一份代码同时只能运行一个 `buildGame.py`；重复启动时会提示已有构建正在运行并退出。每完成一步，脚本会在 `build/.finish-stepN` 记下这一步输入的指纹（IPA、相关脚本与数据的哈希，并包含前一步的指纹）。再次运行时：
-
-- 第 2、3、4、6 步：指纹一致且产物还在就直接跳过（显示 `up to date, skipped`）；IPA 或相关脚本有变化时自动重做，后续步骤随之重做；
-- 第 5 步：始终交给 CMake 增量编译，只重新编译有变化的文件（包括兼容层代码的修改），没有改动时很快结束；
-- 某一步失败时不会留下标记，下次从这一步继续。
-
-发现已有构建时，脚本会在开头提示；需要完全重新构建时，删除 `build/` 目录后重新运行即可。
-
 产物位于 `dist/`：
 
 - `Asphalt6ARM64.ipa`：未签名的 App，用 SideStore、AltStore 等工具签名安装；
