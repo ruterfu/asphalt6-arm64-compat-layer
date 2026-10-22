@@ -55,6 +55,19 @@ def fail(message):
     raise SystemExit('error: ' + message)
 
 
+def missing_ios_sdk():
+    """Explain the usual reason xcrun cannot find the iOS SDK."""
+    developer = subprocess.run(['xcode-select', '-p'], capture_output=True, text=True).stdout.strip()
+    xcodes = sorted(Path('/Applications').glob('Xcode*.app'))
+    if 'CommandLineTools' in developer or not developer:
+        if xcodes:
+            return ('the iOS SDK was not found: the active developer directory is the command line tools.\n'
+                    'Switch to Xcode with:  sudo xcode-select -s %s' % xcodes[0])
+        return 'the iOS SDK was not found: install Xcode from the App Store (the command line tools are not enough)'
+    return ('the iOS SDK was not found in %s.\n'
+            'Open Xcode > Settings > Components > Platform Support, then select and install iOS.' % developer)
+
+
 def check_system():
     """Tools that cannot be installed for the user."""
     if sys.platform != 'darwin':
@@ -66,7 +79,7 @@ def check_system():
             fail('%s not found; install Xcode and CMake 3.20+ (for example: brew install cmake)' % tool)
     sdk = subprocess.run(['xcrun', '--sdk', 'iphoneos', '--show-sdk-path'], capture_output=True, text=True)
     if sdk.returncode or not sdk.stdout.strip():
-        fail('the iOS SDK was not found; install Xcode (not only the command line tools)')
+        fail(missing_ios_sdk())
     version = subprocess.run(['cmake', '--version'], capture_output=True, text=True).stdout.split()
     major, minor = (int(v) for v in version[2].split('.')[:2])
     if (major, minor) < (3, 20):
