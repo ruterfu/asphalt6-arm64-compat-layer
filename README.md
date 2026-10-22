@@ -127,6 +127,8 @@ python3 scripts/buildGame.py /path/to/Asphalt6.ipa
 - 第 5 步：始终交给 CMake 增量编译，只重新编译有变化的文件（包括兼容层代码的修改），没有改动时很快结束；
 - 某一步失败时不会留下标记，下次从这一步继续。
 
+发现已有构建时，脚本会在开头提示；需要完全重新构建时，删除 `build/` 目录后重新运行即可。
+
 产物位于 `dist/`：
 
 - `Asphalt6ARM64.ipa`：未签名的 App，用 SideStore、AltStore 等工具签名安装；

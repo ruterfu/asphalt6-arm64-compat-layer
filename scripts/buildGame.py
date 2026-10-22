@@ -208,8 +208,11 @@ def main():
         parser.error('IPA not found: %s' % args.ipa)
 
     single_instance()
-    # ensure_venv re-runs this script inside build/venv; announce step 1 once.
+    # ensure_venv re-runs this script inside build/venv; print these once.
     if not os.environ.get('AS6_BUILD_IN_VENV'):
+        if any((ROOT / 'build').glob('.finish-step*')):
+            print('Found an existing build in build/: unchanged steps will be reused.\n'
+                  'To rebuild from scratch, delete the build/ folder and run again.', flush=True)
         step(1, 'Preparing toolchain')
     os.environ['AS6_BUILD_IN_VENV'] = '1'
     toolchain.check_system()

@@ -127,6 +127,8 @@ Only one `buildGame.py` can run per checkout at a time; starting another one rep
 - Step 5 is always handed to CMake's incremental build, which recompiles only the files that changed (compatibility layer edits included) and finishes quickly when nothing did;
 - A step that fails leaves no marker, so the next run resumes from that step.
 
+The script mentions it at the start when it finds an existing build; to rebuild from scratch, delete the `build/` folder and run it again.
+
 Outputs are written to `dist/`:
 
 - `Asphalt6ARM64.ipa`: the unsigned app; sign and install it with SideStore, AltStore or similar tools;
