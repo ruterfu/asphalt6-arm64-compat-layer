@@ -13,7 +13,6 @@ This repository contains **only the compatibility layer code**. It does not incl
   - Tested device: iPhone 17 Pro (iOS 27.0);
   - iPhone Duo is not supported yet.
 - **Graphics**: OpenGL ES calls are adapted to the current driver; three old shaders get declaration fixes at build time so that they compile on the current driver.
-- **Music**: the game's own music is played through the system audio service and pauses and resumes normally.
 - **Optional HD background pack**: see below.
 
 ## How it works
