@@ -19,6 +19,11 @@ extern "C" {
 // A host class to hand the guest instead of a dead one, or nil.
 Class GuestMediaSubstituteClass(const char *className);
 
+// The iPod music player feature is removed: these MediaPlayer music-library
+// classes bind as nil, so the guest's own nil checks report no system music
+// and the system never asks for media library access.
+BOOL GuestMediaRemovedClass(const char *className);
+
 // The NSString a missing Foundation/MediaPlayer string constant used to hold,
 // or nil.  Without these the guest registers for every notification in the
 // process because its name pointer binds to zero.

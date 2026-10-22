@@ -388,6 +388,18 @@ Class GuestMediaSubstituteClass(const char *className) {
     return nil;
 }
 
+BOOL GuestMediaRemovedClass(const char *className) {
+    static const char *const removed[] = {
+        "MPMusicPlayerController", "MPMediaQuery", "MPMediaLibrary", "MPMediaItem",
+        "MPMediaItemCollection", "MPMediaPlaylist", "MPMediaPickerController",
+        "MPMediaPropertyPredicate",
+    };
+    if (!className) return NO;
+    for (const char *name : removed)
+        if (strcmp(className, name) == 0) return YES;
+    return NO;
+}
+
 // --- notification registrations made by guest code ---------------------------
 @interface PortNotifReg : NSObject {
 @public

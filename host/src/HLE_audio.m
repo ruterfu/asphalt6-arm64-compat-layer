@@ -6,7 +6,6 @@
 #import "GuestObjC.h"
 #import <AudioToolbox/AudioToolbox.h>
 #import <AVFoundation/AVFoundation.h>
-#import <MediaPlayer/MediaPlayer.h>
 #import <atomic>
 #import <algorithm>
 #import <memory>
@@ -539,8 +538,6 @@ HLE_DEFINE(hle_AudioComponentInstanceNew) {
     AVAudioSession *session = [AVAudioSession sharedInstance];
     GuestTrace(vm, @"[audio] before native instance category=%@ mode=%@ options=%#lx",
                session.category, session.mode, (unsigned long)session.categoryOptions);
-    GuestTrace(vm, @"[audio] media library authorization status=%ld",
-               (long)[MPMediaLibrary authorizationStatus]);
     AudioComponentInstance instance = nullptr;
     OSStatus status = fn(component, &instance);
     auto description = g_audioComponents.find(componentHandle);

@@ -44,7 +44,6 @@ def info_plist(game_app, bundle_id):
         'LSRequiresIPhoneOS': True,
         'LSSupportsOpeningDocumentsInPlace': True,
         'MinimumOSVersion': '17.0',
-        'NSAppleMusicUsageDescription': '用于游戏内的系统音乐库播放选项。你可以拒绝，继续使用游戏内置音乐。',
         'NSMotionUsageDescription': '通过重力感应控制赛车转向。',
         'UIApplicationSceneManifest': {'UIApplicationSupportsMultipleScenes': False},
         'UIDeviceFamily': [1, 2],

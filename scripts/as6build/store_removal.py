@@ -1,8 +1,10 @@
-"""Remove in-app purchase and promotion entry points from the menu movies.
+"""Remove in-app purchase, promotion and iPod music entry points from the menu movies.
 
 Store movies keep every ActionScript-visible instance name, but the visible
 store art, buttons and class registrations become empty clips, so the menus
-work offline without purchase prompts. Pure, deterministic byte transform.
+work offline without purchase prompts. The pause-menu music button and the
+sound-options playlist button are emptied the same way: the system music
+library is not available to the game. Pure, deterministic byte transform.
 """
 import hashlib
 import struct
@@ -78,10 +80,13 @@ def is_export(name):
  n=name.lower()
  return not n.endswith(('.tga','.png','.jpg')) and ('astore' in n or 'moregames' in n or n=='btn_buy_stars')
 
+# iPod music player entry points (pause menu, sound options).
+MUSIC_INSTANCES={'btn_music','playlist_btn'}
+
 def is_instance(name):
  n=(name or '').lower()
  return any(v in n for v in ('astore','moregames')) or n in {
-  'addcash_btn','addstar_btn','addcash_btnbg','addstar_btnbg','btn_tunning_addcash','show_rate_mc'}
+  'addcash_btn','addstar_btn','addcash_btnbg','addstar_btnbg','btn_tunning_addcash','show_rate_mc'} or n in MUSIC_INSTANCES
 
 def empty_place(depth,char,name):
  # Only identity matrix + original instance name. No clip actions or hit shape.

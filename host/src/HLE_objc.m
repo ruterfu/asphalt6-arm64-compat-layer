@@ -21,7 +21,7 @@ HLE_DEFINE(hle_NSClassFromString) {
     NSString *name = GuestNSString(vm, GuestArg(vm, 0));
     gva_t original = name ? GuestObjCClassNamed(vm, name) : 0;
     Class host = name ? GuestMediaSubstituteClass(name.UTF8String) : Nil;
-    if (!host && name) host = NSClassFromString(name);
+    if (!host && name && !GuestMediaRemovedClass(name.UTF8String)) host = NSClassFromString(name);
     GuestSetRet(vm, original ?: GuestObjCWrapClass(vm, host));
 }
 HLE_BIND("_NSClassFromString", hle_NSClassFromString)

@@ -15,7 +15,7 @@ from . import store_removal
 
 DATA = Path(__file__).resolve().parent / 'data'
 MANIFEST_NAME = 'resource-manifest.json'
-MANIFEST_SHA256 = 'a1fc2fe32c32dd962af3d8b0b35f86bca4843d8cc032b9cf0b36d72b407f41d0'
+MANIFEST_SHA256 = 'd265c2c49282cd6039db7d6459c167b7746d5bec6b4c44a41ae21e646e33ebea'
 
 
 def sha(data):
