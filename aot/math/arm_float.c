@@ -5,6 +5,8 @@
 #include "as6_arm_float.h"
 #include "as6_math_support.h"
 #include "fpu/softfloat.h"
+#include <math.h>
+#include <stdbool.h>
 #include <string.h>
 
 #define AS6_FPSCR_FLAGS UINT32_C(0x9f)
@@ -149,18 +151,88 @@ VFP_BITS(as6_vfp_neg_f64, uint64_t, a ^ UINT64_C(0x8000000000000000))
 VFP_BITS(as6_vfp_abs_f64, uint64_t, a & UINT64_C(0x7fffffffffffffff))
 #undef VFP_BITS
 
-#define NEON_BINARY(name, helper) \
+/* Hardware fast path for two-lane NEON add/sub/mul. NEON arithmetic always
+ * runs flush-to-zero, default-NaN, round-to-nearest; on normal or zero inputs
+ * with a normal (or exact zero) result none of those modes can matter, so
+ * the host FPU (round-to-nearest, no flush) yields the same bits. The only
+ * flag such a lane can raise is inexact, recovered exactly from the rounding
+ * error. Anything else (denormal, infinity, NaN, overflow, results near the
+ * underflow threshold) takes the software path unchanged. */
+#if defined(__aarch64__) && !defined(AS6_NO_FAST_NEON)
+#pragma clang fp contract(off)
+enum { FAST_ADD, FAST_SUB, FAST_MUL };
+
+static inline bool fast_operand(uint32_t x) {
+    const uint32_t exponent = (x >> 23) & 0xff;
+    return (exponent != 0 && exponent != 0xff) || !(x & 0x7fffffffu);
+}
+
+static inline float as_float(uint32_t x) { float f; memcpy(&f, &x, 4); return f; }
+static inline uint32_t as_bits(float f) { uint32_t x; memcpy(&x, &f, 4); return x; }
+
+/* false: use the software path. Otherwise *result holds the lane and
+ * *inexact whether rounding occurred (only computed when `need_inexact`, i.e.
+ * the cumulative inexact flag is still clear). */
+static inline bool fast_lane(int op, uint32_t a, uint32_t b, bool need_inexact, uint32_t *result, bool *inexact) {
+    if (!fast_operand(a) || !fast_operand(b)) return false;
+    const float x = as_float(a), y = as_float(b);
+    float r, error;
+    if (op == FAST_MUL) {
+        r = x * y;
+    } else {
+        const float addend = op == FAST_SUB ? -y : y;
+        r = x + addend;
+        if (need_inexact) {
+            /* TwoSum: the exact rounding error of x + addend (no overflow here). */
+            const float bv = r - x, av = r - bv;
+            error = (x - av) + (addend - bv);
+        }
+    }
+    const uint32_t bits = as_bits(r), exponent = (bits >> 23) & 0xff;
+    if (exponent == 0xff) return false;                 /* overflow */
+    if (exponent == 0) {
+        if (bits & 0x7fffffffu) return false;           /* subnormal: FZ flushes */
+        /* Exact zero: a cancelled sum, or a product with a zero factor.
+         * A product of nonzero factors that reached zero underflowed. */
+        if (op == FAST_MUL && (a & 0x7fffffffu) && (b & 0x7fffffffu)) return false;
+        *result = bits; *inexact = false; return true;
+    }
+    if (exponent < 64) return false;                    /* keep clear of tininess and FMA underflow */
+    *result = bits;
+    if (!need_inexact) { *inexact = false; return true; }
+    if (op == FAST_MUL) error = fmaf(x, y, -r);         /* exact product error */
+    *inexact = error != 0.0f; return true;
+}
+
+static inline bool fast_neon(int op, uint64_t a, uint64_t b, uint32_t fpscr, as6_fp_result *out) {
+    uint32_t lo, hi; bool lo_inexact, hi_inexact;
+    const bool need_inexact = !(fpscr & 16u);
+    if (!fast_lane(op, (uint32_t)a, (uint32_t)b, need_inexact, &lo, &lo_inexact) ||
+        !fast_lane(op, (uint32_t)(a >> 32), (uint32_t)(b >> 32), need_inexact, &hi, &hi_inexact)) return false;
+    *out = (as6_fp_result){(uint64_t)lo | ((uint64_t)hi << 32),
+                           fpscr | ((lo_inexact || hi_inexact) ? 16u : 0u), 0};
+    return true;
+}
+#define FAST_NEON(op) \
+    if (out && !(fpscr & AS6_UNSUPPORTED_FPSCR) && fast_neon(op, a, b, fpscr, out)) return AS6_FP_OK;
+#else
+#define FAST_NEON(op)
+#endif
+
+#define NEON_BINARY(name, helper, op) \
 uint32_t name(uint64_t a, uint64_t b, uint32_t fpscr, as6_fp_result *out) { \
+    FAST_NEON(op) \
     float_status state; uint32_t status = begin(fpscr, true, out, &state); \
     if (status) return status; \
     uint64_t lo = helper((uint32_t)a, (uint32_t)b, &state); \
     uint64_t hi = helper((uint32_t)(a >> 32), (uint32_t)(b >> 32), &state); \
     return finish(lo | (hi << 32), fpscr, &state, out); \
 }
-NEON_BINARY(as6_neon_add_2f32, float32_add)
-NEON_BINARY(as6_neon_sub_2f32, float32_sub)
-NEON_BINARY(as6_neon_mul_2f32, float32_mul)
+NEON_BINARY(as6_neon_add_2f32, float32_add, FAST_ADD)
+NEON_BINARY(as6_neon_sub_2f32, float32_sub, FAST_SUB)
+NEON_BINARY(as6_neon_mul_2f32, float32_mul, FAST_MUL)
 #undef NEON_BINARY
+#undef FAST_NEON
 
 /* Extended forms with actual original ARM examples. See semantic-authority.json.
  * These are independently owned wrappers, not a CPU helper/decoder import.
