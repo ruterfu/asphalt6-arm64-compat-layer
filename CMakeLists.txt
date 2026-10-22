@@ -53,8 +53,10 @@ file(GLOB AS6_HOST_GENERATED CONFIGURE_DEPENDS "${AS6_GENERATED_DIR}/host/*.cpp"
 file(GLOB AS6_HOST_OBJC_SOURCES CONFIGURE_DEPENDS host/src/*.m host/src/*.mm host/app/*.mm)
 set_source_files_properties(${AS6_HOST_OBJC_SOURCES} PROPERTIES
     LANGUAGE OBJCXX COMPILE_OPTIONS "-fobjc-arc;-fblocks")
-file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/NativeBuildConfig.hpp"
-    "#pragma once\n#define AS6_EXPECTED_STREAM_ABI \"1c80fe5c2eb7ddf38d5b63ee026a9c4d5714b6379c160631fa80745ec7dbc840\"\n#define AS6_HOST_BUILD_ID \"${AS6_HOST_BUILD_ID}\"\n")
+# CONFIGURE (unlike WRITE) leaves the file untouched when its content is unchanged.
+file(CONFIGURE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/NativeBuildConfig.hpp"
+    CONTENT "#pragma once\n#define AS6_EXPECTED_STREAM_ABI \"1c80fe5c2eb7ddf38d5b63ee026a9c4d5714b6379c160631fa80745ec7dbc840\"\n#define AS6_HOST_BUILD_ID \"${AS6_HOST_BUILD_ID}\"\n"
+    @ONLY)
 add_library(as6_ios_host STATIC ${AS6_HOST_SOURCES} ${AS6_HOST_GENERATED} host/app/NativeApp.mm)
 set_target_properties(as6_ios_host PROPERTIES CXX_STANDARD 17 OBJCXX_STANDARD 17)
 target_include_directories(as6_ios_host PRIVATE host/src aot/runtime "${CMAKE_CURRENT_BINARY_DIR}")
