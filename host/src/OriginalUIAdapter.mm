@@ -259,9 +259,11 @@ bool identify(GuestVM *vm,State &s,Movie &m) {
     // target is the original Back character, with translation only.
     if(find(vm,s,m.handler,"extra_bonus")) {
         m.kind=Kind::Loading;
-        // Authored reward text and the separate local panel containing both stars.
-        // The full-window background is a different root and stays unchanged.
-        single(m,"extra_bonus");single(m,"bg_extra");
+        // Race loading screen. The background bitmap (depth 1, unnamed) also
+        // carries the flag and the title strips, so it and they stay; the
+        // texts and panels regain their shape (applyResourceForeground relies
+        // on this order).
+        for(const char *p:{"extra_bonus","bg_extra","race_type_icon","txt1","txt_track_name","txt_race_type","loading_sym"})single(m,p);
     } else if(find(vm,s,m.handler,"CupList")&&find(vm,s,m.handler,"Title")) {
         m.kind=Kind::CareerSelection;
         const char *paths[]={"CupList","Title","btn_flip_next","btn_flip_prev","event_1","event_2","event_3","event_4","event_5","selection_focus"};
@@ -714,19 +716,27 @@ bool applyStageAffine(GuestVM *vm,State &s,Movie &m,const M &stageAffine,unsigne
 }
 bool applyResourceForeground(GuestVM *vm,State &s,Movie &m,const AS6OriginalUIHostMetrics &host) {
     float stage[4]{};
-    // Fixed user layout: horizontal90%, 5% on each authored stage side.
-    // Y is exactly unchanged. No Host safe-area ratio, ray fit or bounds fit.
+    // By the inverse canvas stretch, Y unchanged: the event card and
+    // description about the stage's left edge (their layout kept, against the
+    // left of the screen); the reward panel likewise but 6% of the stage in
+    // from the left and moved down to the stage's vertical centre (authored
+    // centre y 341), beside the Dynamic Island; the track name, just right of the flag in the
+    // background, about its own left edge (authored x 367); the race type,
+    // centred in its strip, about its box centre (x 424); the spinner about
+    // the stage's right edge.
     if(!read(vm,m.definition+0xb4,stage,sizeof(stage)))return false;
     for(float f:stage)if(!std::isfinite(f))return false;
     const double width=double(stage[1])-stage[0],height=double(stage[3])-stage[2];
     if(width<=0||height<=0)return false;
-    const M stageAffine{.9,0,.1*stage[0]+.05*width,0,1,0};
+    const double k=roundButtonXScale();
+    const M left{k,0,(1-k)*stage[0],0,1,0},reward{k,0,(1-k)*stage[0]+.06*width,0,1,(stage[2]+.5*height)-341*20},name{k,0,(1-k)*367*20,0,1,0},type{k,0,(1-k)*424*20,0,1,0},right{k,0,(1-k)*stage[1],0,1,0};
     unsigned applied=0,changed=0;
-    if(!applyStageAffine(vm,s,m,stageAffine,applied,changed))return false;
-    if(applied&&!m.selectionReadyLogged){m.selectionReadyLogged=true;char line[640];
-        std::snprintf(line,sizeof(line),"[foreground-ui] mode=horizontal5 kind=%u handler=%#x groups=%u changed=%u sx=0.900000 sy=1.000000 movie_stage=(%.3f,%.3f,%.3f,%.3f) side_inset_twips=%.3f stage_tx=%.3f stage_ty=0.000 Host=(%.2f,%.2f); background and Back untouched",
-            unsigned(m.kind),m.handler,applied,changed,double(stage[0]),double(stage[1]),double(stage[2]),double(stage[3]),.05*width,stageAffine.tx,host.windowBoundsPoints[2],host.windowBoundsPoints[3]);
-        GuestRawLog(line);GuestTrace(vm,@"%s",line);
+    if(!applyStageAffine(vm,s,m,reward,applied,changed,0,0,0,2)||!applyStageAffine(vm,s,m,left,applied,changed,0,0,2,4)||!applyStageAffine(vm,s,m,name,applied,changed,0,0,4,5)||
+       !applyStageAffine(vm,s,m,type,applied,changed,0,0,5,6)||!applyStageAffine(vm,s,m,right,applied,changed,0,0,6))return false;
+    if(applied&&!m.selectionReadyLogged){m.selectionReadyLogged=true;char line[256];
+        std::snprintf(line,sizeof(line),"[foreground-ui] race loading handler=%#x groups=%u changed=%u sx=%.4f stage=(%.1f %.1f) Host=(%.2f,%.2f)",
+            m.handler,applied,changed,k,double(stage[0]),double(stage[1]),host.windowBoundsPoints[2],host.windowBoundsPoints[3]);
+        GuestRawLog(line);
     }
     return !GuestHasStopRequest(vm);
 }
