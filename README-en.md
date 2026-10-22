@@ -9,7 +9,9 @@ This repository contains only the compatibility layer code. It does not include 
 ## Features
 
 - Runs the original 1.3.2 game on arm64 iPhones, about 60 fps in races on device
-- Full-screen and safe-area layout; the 3D view uses the real screen aspect and the interface is not stretched
+- Full-screen and safe-area layout; the 3D view uses the real screen aspect and the interface is not stretched; the office monitor showing career, quick race and multiplayer also fills the screen
+- Multiplayer: local Wi-Fi can be entered and a user name typed (a two-device match is not yet tested); online (Gameloft Live has shut down) and Bluetooth are unavailable and their buttons are greyed out
+- The Twitter entry on the info page opens Gameloft's page on X
 - Works with the current OpenGL ES driver
 - Removes the discontinued store, promotion and iPod music player entry points; the app never asks for music library access
 - Optional HD background pack (16:9 and full-screen 2.2:1)
