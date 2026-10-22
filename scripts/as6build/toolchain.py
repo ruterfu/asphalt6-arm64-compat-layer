@@ -42,7 +42,7 @@ def check_system():
         fail('macOS is required (Xcode builds the iOS app)')
     if sys.version_info < (3, 9):
         fail('Python 3.9 or newer is required')
-    for tool in ('cmake', 'xcrun', 'lipo', 'codesign', 'unzip'):
+    for tool in ('cmake', 'xcrun', 'lipo', 'codesign', 'unzip', 'make'):
         if not shutil.which(tool):
             fail('%s not found; install Xcode and CMake 3.20+ (for example: brew install cmake)' % tool)
     sdk = subprocess.run(['xcrun', '--sdk', 'iphoneos', '--show-sdk-path'], capture_output=True, text=True)
@@ -95,6 +95,25 @@ def download(spec, target, log):
     return target
 
 
+def build_decompiler(ghidra, log):
+    """Ghidra releases ship no Apple Silicon decompiler. Without it the
+    analysis cannot recover switch tables and disassembles less of the
+    program, so build it from the sources bundled with the release."""
+    feature = ghidra / 'Ghidra/Features/Decompiler'
+    target = feature / 'os/mac_arm_64/decompile'
+    if target.is_file():
+        return
+    log('building the Ghidra decompiler for Apple Silicon (about a minute)')
+    source = feature / 'src/decompile/cpp'
+    result = subprocess.run(['make', '-j%d' % (os.cpu_count() or 4), 'ARCH_TYPE=-arch arm64', 'ghidra_opt'],
+                            cwd=source, capture_output=True, text=True)
+    if result.returncode:
+        sys.stderr.write(result.stdout[-4000:] + result.stderr[-4000:])
+        fail('building the Ghidra decompiler failed')
+    target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(source / 'ghidra_opt', target)
+
+
 def ensure_ghidra_and_jdk(log):
     TOOLS.mkdir(parents=True, exist_ok=True)
     ghidra, jdk = TOOLS / GHIDRA['home'], TOOLS / JDK['home']
@@ -103,6 +122,7 @@ def ensure_ghidra_and_jdk(log):
         # The system unzip keeps the executable bits Ghidra's launchers need.
         subprocess.run(['unzip', '-q', '-o', str(archive), '-d', str(TOOLS)], check=True)
         archive.unlink()
+    build_decompiler(ghidra, log)
     if not (jdk / 'bin/java').is_file():
         archive = download(JDK, TOOLS / 'jdk.tar.gz', log)
         with tarfile.open(archive) as t:
