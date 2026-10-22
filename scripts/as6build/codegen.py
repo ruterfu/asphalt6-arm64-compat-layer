@@ -307,12 +307,41 @@ def hook_modules(reference, target, log):
     log('codegen: hooked modules written')
 
 
+def sync(staging, generated, log):
+    """Move staged sources into place, touching only files whose bytes changed,
+    so a rerun leaves the compiler output up to date instead of rebuilding all."""
+    changed = removed = 0
+    for folder in ('aot', 'host'):
+        source, target = staging / folder, generated / folder
+        target.mkdir(parents=True, exist_ok=True)
+        staged = {p.name for p in source.iterdir() if p.is_file()}
+        for name in sorted(staged):
+            new, old = source / name, target / name
+            if old.is_file() and old.stat().st_size == new.stat().st_size and old.read_bytes() == new.read_bytes():
+                new.unlink()
+            else:
+                os.replace(new, old)
+                changed += 1
+        for old in target.iterdir():
+            if old.is_file() and old.name not in staged:
+                old.unlink()
+                removed += 1
+    shutil.rmtree(staging)
+    log('codegen: %d source files updated, %d removed' % (changed, removed) if changed or removed
+        else 'codegen: sources unchanged since the last build')
+
+
 def generate(armv7, app, generated, work, ghidra, jdk, log=print):
     stream = export_pcode(armv7, work, ghidra, jdk, log)
     supplemental = recover_supplemental(stream, work, ghidra, jdk, log)
     reference = work / 'aot'
     lower_stream(stream, armv7, supplemental, reference, log)
-    promote_modules(reference, generated / 'aot', log)
-    hook_modules(reference, generated / 'host', log)
-    lower_fragments(export_fragments(stream, work, ghidra, jdk, log), generated / 'host', work, log)
-    write_data_bundle(armv7, generated / 'host', log)
+    # Build into a staging folder first; sync() then updates generated/ in place.
+    staging = work / 'staging'
+    if staging.exists():
+        shutil.rmtree(staging)
+    promote_modules(reference, staging / 'aot', log)
+    hook_modules(reference, staging / 'host', log)
+    lower_fragments(export_fragments(stream, work, ghidra, jdk, log), staging / 'host', work, log)
+    write_data_bundle(armv7, staging / 'host', log)
+    sync(staging, generated, log)
