@@ -16,7 +16,7 @@ This repository contains only the compatibility layer code. It does not include 
 
 ## Screenshots
 
-Taken on an iPhone 17 Pro with the HD background pack installed. Gameplay recording on device: [watch on X](https://x.com/ruterfu/status/2113624582498476257)
+Taken on an iPhone 17 Pro with the HD background pack installed. Gameplay recording on device: [watch on X](https://x.com/ruterfu/status/2113627084392444200)
 
 | | |
 | --- | --- |

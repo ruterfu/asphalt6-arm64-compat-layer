@@ -16,7 +16,7 @@
 
 ## 截图
 
-iPhone 17 Pro 实机截图，已装高清背景包。实机演示录屏：[在 X 上观看](https://x.com/ruterfu/status/2113624582498476257)
+iPhone 17 Pro 实机截图，已装高清背景包。实机演示录屏：[在 X 上观看](https://x.com/ruterfu/status/2113627084392444200)
 
 | | |
 | --- | --- |
