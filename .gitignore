@@ -23,3 +23,4 @@ __pycache__/
 # Signing material
 *.mobileprovision
 *.p12
+capture/

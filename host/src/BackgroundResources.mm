@@ -164,8 +164,13 @@ static NSString *Candidate(NSString *path) {
     // With the wide view, menu backgrounds sit on the 3:2 in-room monitor and
     // are no longer stretched: take the plain centered 3:2 crop of the art.
     // Title and loading screens are still drawn on the stretched canvas and
-    // keep the physical aspect.
-    const bool menuBackground = uiSpec || (spec && !strcmp(spec->art, "blue-menu-16x9-v1.jpg"));
+    // keep the physical aspect, as does the blue menu art: it fills the race
+    // result and the widened monitor pages, both at the physical aspect. So do
+    // the unlock and next event screens, drawn full screen after a race.
+    using UIProfile = as6_ui_background::Profile;
+    const bool fullScreenUI = uiSpec && (uiSpec->profile == UIProfile::Unlocks000630 || uiSpec->profile == UIProfile::Unlocks000316Retina ||
+        uiSpec->profile == UIProfile::NextEvents000683 || uiSpec->profile == UIProfile::NextEvents000184Retina);
+    const bool menuBackground = uiSpec && !fullScreenUI;
     // Full-screen phones (wider than 2:1) use each art's 2.2:1 version when the
     // pack has one.
     const bool wideArt = width / height > 2.0;

@@ -437,10 +437,15 @@ void GuestPlaceOriginalSkipControls(GuestVM *vm, gva_t guestView, id windowObjec
         // physical placement; their action still enters the original IMP.
         [button setTitle:@"▶▶" forState:UIControlStateNormal];
         [button setTitle:@"▶▶" forState:UIControlStateHighlighted];
+        // 56x44 drawn at 1.5x (caption and touch area alike), its top right
+        // corner kept 16 pt in from the safe area's right and 10 pt down.
+        const CGFloat scale = 1.5;
         button.transform = CGAffineTransformIdentity;
         UIEdgeInsets safe = window.safeAreaInsets;
-        button.frame = CGRectMake(window.bounds.size.width - safe.right - 72,
-                                   safe.top + 10, 56, 44);
+        button.bounds = CGRectMake(0, 0, 56, 44);
+        button.center = CGPointMake(window.bounds.size.width - safe.right - 16 - 28 * scale,
+                                    safe.top + 10 + 22 * scale);
+        button.transform = CGAffineTransformMakeScale(scale, scale);
         button.autoresizingMask = UIViewAutoresizingFlexibleLeftMargin |
                                   UIViewAutoresizingFlexibleBottomMargin;
         [window addSubview:button];

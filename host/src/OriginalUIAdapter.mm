@@ -43,13 +43,30 @@ struct Group { std::vector<Node> nodes; };
 struct MenuControl { Node node;double physicalDX=0;double uniformScale=1;bool readyLogged=false;double physicalDY=0;bool unstretch=false; };
 // A node scaled about a fixed point of its own art (local twips).
 struct PivotControl { Node node;P pivot{};double sx=1,sy=1; };
+// A node that loses the canvas stretch about a vertical line of the stage,
+// given as a fraction of its width (0 left edge, .5 centre, 1 right edge);
+// optionally also scaled about that line at the stage bottom, then moved by
+// fractions of the stage size.
+// A round button moved into a screen corner: its circle (centre in the
+// button's local twips, diameter in local twips) and the label that goes
+// with it (may be unnamed: an empty path is never resolved).
+// In place: it keeps the x losing the stretch about the left edge gives it,
+// on the bottom right reference's row.
+enum class Corner { TopLeft, BottomRight, InPlace };
+struct CornerButton { Node button,label;P circle{};double diameter=0;Corner corner=Corner::TopLeft; };
+struct AnchoredControl { Node node;double anchor=.5,scale=1,dx=0,dy=0; };
+M anchoredAffine(const AnchoredControl &c,const float *stage,double k) {
+    const double width=double(stage[1])-stage[0],height=double(stage[3])-stage[2],x=stage[0]+c.anchor*width;
+    return {k*c.scale,0,(1-k*c.scale)*x+c.dx*width,0,c.scale,(1-c.scale)*stage[3]+c.dy*height};
+}
 struct Mapping {
     H hostToStage,stageToHost;
     bool plane=false;
     Rect stageClip{};
     double roundTripPixels=0;
 };
-enum class Kind { Unknown, Loading, Menu, Race, TrackPlane, CareerSelection, PauseMenu, RaceHud, Multiplayer, Paint, Tuning, Info };
+enum class Kind { Unknown, Loading, Menu, Race, TrackPlane, CareerSelection, PauseMenu, RaceHud, Multiplayer, Paint, Tuning, Info, RaceEnd, Unlock, RaceResult };
+bool adapted(Kind k) { return k!=Kind::Unknown&&k!=Kind::Race&&k!=Kind::TrackPlane; }
 struct Movie {
     std::uint32_t handler=0,root=0,definition=0,context=0;
     Kind kind=Kind::Unknown;
@@ -64,6 +81,15 @@ struct Movie {
     std::vector<MenuControl> roundButtons;
     bool roundButtonsDiscovered=false;
     std::vector<PivotControl> pivotControls;
+    std::vector<AnchoredControl> anchoredControls;
+    // Race result: the whole movie back to 3:2 about the stage centre, its
+    // full-screen backdrops (unnamed, the first three display list entries)
+    // widened again so they still fill the screen.
+    Node resultRoot{"_root"};
+    // Corner buttons and their labels, placed where the reference buttons sit
+    // (see placeCornerButtons).
+    std::vector<CornerButton> cornerButtons;
+    std::array<Node,3> resultBackdrops{};
     // Info page: the Twitter row's logo (unnamed, just before its mc_icons).
     Node twitterLogo;bool twitterLogoBound=false;
     unsigned advances=0;
@@ -164,6 +190,10 @@ bool restoreMovie(GuestVM *vm,State &s,Movie &m) {
     for(auto &control:m.menuControls)if(!restore(vm,s,control.node))return false;
     for(auto &control:m.roundButtons)if(!restore(vm,s,control.node))return false;
     for(auto &control:m.pivotControls)if(!restore(vm,s,control.node))return false;
+    for(auto &control:m.anchoredControls)if(!restore(vm,s,control.node))return false;
+    for(auto &n:m.resultBackdrops)if(!restore(vm,s,n))return false;
+    for(auto &c:m.cornerButtons)if(!restore(vm,s,c.button)||!restore(vm,s,c.label))return false;
+    if(!restore(vm,s,m.resultRoot))return false;
     if(!restore(vm,s,m.careerStars))return false;
     if(!restore(vm,s,m.carInfoBar))return false;
     if(!restore(vm,s,m.carInfoBackdrop))return false;
@@ -215,6 +245,11 @@ bool hideGameloftLive(GuestVM *vm,State &s,Movie &m) {
     return !GuestHasStopRequest(vm);
 }
 void single(Movie &m,const char *path) { m.groups.push_back({{{path}}}); }
+void anchored(Movie &m,const char *path,double anchor,double scale=1,double dx=0,double dy=0) { m.anchoredControls.push_back({{path},anchor,scale,dx,dy}); }
+// Circle centre and diameter in the button's local pixels.
+void corner(Movie &m,const char *button,const char *label,P circle,double diameter,Corner where) {
+    m.cornerButtons.push_back({Node{button},Node{label},{circle.x*20,circle.y*20},diameter*20,where});
+}
 void discoverSelectionControls(GuestVM *vm,State &s,Movie &m) {
     if(!m.menuControls.empty()||m.advances%120!=1)return;
     // Selection-only summary nodes. Flipper parents keep both animated text
@@ -241,6 +276,19 @@ double roundButtonXScale() {
     const double stretch=AS6CanvasHorizontalStretch();
     return std::isfinite(stretch)&&stretch>1.001&&stretch<3?1/stretch:1;
 }
+// The full-screen HD backdrops (unlock, race result) carry slanted strips
+// that some titles sit in. Where a strip is, as a fraction of the screen
+// height, given where it is in the 16:9 art and in the 2.2:1 art: the screen
+// shows the 2.2:1 art when wider than 2:1, else the 16:9 art, cropped to its
+// aspect about the centre (a wider screen loses some top and bottom).
+double backdropStripY(double in16x9,double in22x1) {
+    const double k=roundButtonXScale(),aspect=1.5/k;
+    const bool wide=aspect>2;
+    const double art=wide?2868./1320:16./9;
+    double y=wide?in22x1:in16x9;
+    if(aspect>art){const double visible=art/aspect;y=(y-(1-visible)/2)/visible;}
+    return y;
+}
 void discoverRoundButtons(GuestVM *vm,State &s,Movie &m) {
     if(m.roundButtonsDiscovered||m.advances%120!=1)return;
     m.roundButtonsDiscovered=true;
@@ -252,7 +300,7 @@ void discoverRoundButtons(GuestVM *vm,State &s,Movie &m) {
         if(find(vm,s,m.handler,path))m.roundButtons.push_back({{path},0.,1.});
 }
 bool identify(GuestVM *vm,State &s,Movie &m) {
-    if(m.kind!=Kind::Unknown)return m.kind==Kind::Loading||m.kind==Kind::CareerSelection||m.kind==Kind::Menu||m.kind==Kind::PauseMenu||m.kind==Kind::RaceHud||m.kind==Kind::Multiplayer||m.kind==Kind::Paint||m.kind==Kind::Tuning||m.kind==Kind::Info;
+    if(m.kind!=Kind::Unknown)return adapted(m.kind);
     if(m.discoveryDone)return false;
     m.discoveryDone=true;
     // Preserve the current Career/Loading scope. The one additional menu
@@ -322,9 +370,85 @@ bool identify(GuestVM *vm,State &s,Movie &m) {
         m.groups.push_back({{Node{}}}); // stats panel frame: unnamed, bound in AS6OriginalUIApply
     } else if(find(vm,s,m.handler,"hud.mc_touchToSkip.btn_skip")) {
         m.kind=Kind::RaceHud;
-        for(const char *p:{"hud.mc_touchToSkip.btn_skip","menu_Tutorial.btn_next"})single(m,p);
+    } else if(find(vm,s,m.handler,"screen.unlocked_title")) {
+        // Unlock screen: the title, stats and skip keep their place against the
+        // left edge, the car name and continue against the right; the
+        // full-screen background and the unlocked item's picture stay.
+        m.kind=Kind::Unlock;
+        // The title (centred 7.6% down) into the strip below it in the
+        // backdrop (measured at the title's middle, 27% across).
+        anchored(m,"screen.unlocked_title",0,1,0,backdropStripY(.119,.180)-.076);
+        // Skip keeps its corner, at Next's size (the same button art).
+        corner(m,"screen.skip_unlocks","",{103,-6},98,Corner::InPlace);
+        // The stats column (authored 20.8%..80.1% down) smaller, in the blue
+        // below the backdrop's strips (their lowest line at 15% across) down
+        // to 78%, and in from the left, clear of the Dynamic Island.
+        {
+            const double top=backdropStripY(.230,.273)+.02,bottom=.78,scale=std::min(1.,(bottom-top)/(.801-.208));
+            anchored(m,"screen.carInfos",0,scale,.06,top-(1-(1-.208)*scale));
+        }
+        anchored(m,"screen.unlocked_category_txt",.5);
+        anchored(m,"screen.new_car_stuff",1);
+        corner(m,"screen.btn_next","",{103,-6},98,Corner::BottomRight); // label inside; circle measured on screen
+        // The caption under the picture, and the unlocked item's picture
+        // (not the 3D car's place) about the picture's centre (602 of 1152).
+        anchored(m,"screen.right_txt",.5);
+        for(const char *p:{"screen.left_image_mc.track","screen.left_image_mc.sponsor","screen.left_image_mc.tuning","screen.left_image_mc.cup"})
+            anchored(m,p,602.35/1152);
+    } else if(find(vm,s,m.handler,"pos_circle")&&find(vm,s,m.handler,"result_next_btn")) {
+        // Race result (prize money): the table stays centred with the movie;
+        // the position, track and career total keep to the left edge, the
+        // race type icon and Next to the right (see applyRaceResult).
+        m.kind=Kind::RaceResult;
+        for(const char *p:{"pos_circle","position"})anchored(m,p,0);
+        // The track name and race type stay in their strips of the (widened)
+        // backdrop: about the name's left edge (stage x 178 of 1152) and the
+        // right-aligned race type's right edge (678).
+        // Down into the strips (measured at their middles, 19% and 34%
+        // across): the name (centred 10.9% down) into the wide one below it,
+        // the race type (16.5%) into the narrow one below it.
+        anchored(m,"my_track_name_txt",178./1152,1,0,backdropStripY(.129,.144)-.109);
+        anchored(m,"race_type_txt",678./1152,1,0,backdropStripY(.190,.197)-.165);
+        // The career total a little smaller and in from the corner, Next
+        // further in from its corner too.
+        for(const char *p:{"totalCareer_txt","cash7_txt"})anchored(m,p,0,.8,.03,0);
+        anchored(m,"RaceType_Icon",1);
+        corner(m,"result_next_btn","",{93,-11.5},96,Corner::BottomRight); // its label is inside; circle measured on screen
+    } else if(find(vm,s,m.handler,"menu_NextEvent.grp_next_event")) {
+        // End of race pages over the world map: the event card about the
+        // centre, Home and Retry against the left edge, Next against the right.
+        m.kind=Kind::RaceEnd;
+        for(const char *page:{"menu_NextEvent","menu_Retry"}){
+            const std::string p=page;
+            for(const char *c:{".grp_next_event",".txt_next_event_is",".txt_next_event_track",".txt_Country",".CountryFlag",".GameTypeIcon"})anchored(m,(p+c).c_str(),.5);
+        }
+        // Home at the top left, Next (or Home when the career ends) at the bottom right.
+        // Circles measured on screen (their art's bounds include a glow).
+        corner(m,"menu_NextEvent.btn_to_career_menu","menu_NextEvent.txt_to_main",{-4,-2.5},30.2,Corner::TopLeft);
+        corner(m,"menu_Retry.btn_to_career_menu","menu_Retry.txt_to_main",{-4,-2.5},30.2,Corner::TopLeft);
+        corner(m,"menu_NextEvent.btn_next_event","menu_NextEvent.txt_btn_next",{-73,33},33.6,Corner::BottomRight);
+        corner(m,"menu_CareerEnding.btn_to_career_menu","menu_CareerEnding.txt_to_main",{-4,-2.5},30.2,Corner::BottomRight);
+        // Retry stays at the left, on Next's row and at its size.
+        corner(m,"menu_NextEvent.btn_retry","menu_NextEvent.txt_btn_retry",{2.5,-.5},33,Corner::InPlace);
+        corner(m,"menu_Retry.btn_retry","menu_Retry.txt_btn_retry",{2.5,-.5},33,Corner::InPlace);
+        for(const char *p:{"menu_EndFreeRace.btn_to_career_menu","menu_EndFreeRace.btn_retry","menu_EndFreeRace.txt_to_main","menu_EndFreeRace.txt_btn_retry",
+                           "menu_CareerEnding.CongratTxt","menu_CareerEnding.CompletionTxt","menu_CareerEnding.ToCompleteTxt"})anchored(m,p,.5);
     }
-    return m.kind==Kind::Loading||m.kind==Kind::CareerSelection||m.kind==Kind::Menu||m.kind==Kind::PauseMenu||m.kind==Kind::RaceHud||m.kind==Kind::Multiplayer||m.kind==Kind::Paint||m.kind==Kind::Tuning||m.kind==Kind::Info;
+    if(m.kind==Kind::RaceHud){
+        // Race result: the title against the left edge, the objectives against
+        // the right, the star row centred; the race's centred banners too.
+        anchored(m,"hud.Stars_mc.mc_title",0);anchored(m,"hud.Stars_mc.mc_objectives",1);
+        for(const char *p:{"hud.Stars_mc.mc_bottomStars","hud.WinLose_txt","hud.anim_elimination","hud.anim_wrecked","hud.anim_youLose","hud.WrongWay","hud.countdown_mc"})anchored(m,p,.5);
+        // Achievement pop-ups: the bottom one centred, the others against the left edge.
+        anchored(m,"sym_achievement_bottom",.5);
+        for(const char *p:{"sym_achievement_left","sym_achievement_bottom_left"})anchored(m,p,0);
+        // The first race's controls tutorial, over its full-screen dimmer.
+        for(const char *p:{"menu_Tutorial.mc_title","menu_Tutorial.txt_tutorial_Info","menu_Tutorial.txt_tutorial_Title"})anchored(m,p,.5);
+        // Same art as the race intro's skip; its circle measured on screen.
+        corner(m,"menu_Tutorial.btn_next","menu_Tutorial.mc_next",{0,0},93.4,Corner::BottomRight);
+        corner(m,"hud.mc_touchToSkip.btn_skip","",{0,0},93.4,Corner::BottomRight);
+    }
+    return adapted(m.kind);
 }
 
 Movie *movie(GuestVM *vm,State &s,std::uint32_t handler) {
@@ -785,6 +909,82 @@ bool applyInfoPage(GuestVM *vm,State &s,Movie &m) {
     }
     return applyPivotControls(vm,s,m);
 }
+bool applyAnchoredControls(GuestVM *vm,State &s,Movie &m) {
+    float stage[4]{};
+    if(!read(vm,m.definition+0xb4,stage,sizeof(stage)))return false;
+    for(float f:stage)if(!std::isfinite(f))return false;
+    const double k=roundButtonXScale();
+    unsigned applied=0,changed=0;
+    for(auto &control:m.anchoredControls)
+        if(!applyNodeStageAffine(vm,s,m,control.node,anchoredAffine(control,stage,k),applied,changed))return false;
+    return !GuestHasStopRequest(vm);
+}
+// Reference corners as measured on screen (fractions of the screen): top
+// left, the career page's Back (the 3D room's menu); bottom right, the race
+// intro's skip button. Every corner button takes the career Back's size (of
+// the screen height).
+constexpr double TopLeftX=.058,TopLeftY=.071,BottomRightX=.915,BottomRightY=.915,CornerButtonSize=.0905;
+bool placeCornerButtons(GuestVM *vm,State &s,Movie &m) {
+    float stage[4]{};
+    if(!read(vm,m.definition+0xb4,stage,sizeof(stage)))return false;
+    for(float f:stage)if(!std::isfinite(f))return false;
+    const double width=double(stage[1])-stage[0],height=double(stage[3])-stage[2],k=roundButtonXScale();
+    unsigned applied=0,changed=0;
+    for(auto &h:m.cornerButtons){
+        auto &n=h.button;
+        if(!resolve(vm,s,m,n))continue;
+        std::array<float,6>current{},world{};std::uint32_t pointer=0;
+        if(!local(vm,n,current)||!call(vm,WorldMatrix,{n.object},&pointer)||!read(vm,pointer,world.data(),24))return false;
+        M inv;if(!inverse(matrix(current.data()),inv))return false;
+        const auto base=canonicalLocal(n,current);
+        const M w=multiply(multiply(matrix(world.data()),inv),matrix(base.data()));
+        const double ax=std::hypot(w.a,w.c),ay=std::hypot(w.b,w.d);
+        if(!(ax>0)||!(ay>0))continue;
+        // Its size from the height; x is then k of y on the stage (round on the
+        // stretched screen), whatever its parents already scale x by.
+        const double sy=CornerButtonSize*height/(h.diameter*ay),sx=k*sy*ay/ax;
+        const P o=apply(w,h.circle);
+        const P t=h.corner==Corner::TopLeft?P{stage[0]+TopLeftX*width,stage[2]+TopLeftY*height}:
+                  h.corner==Corner::BottomRight?P{stage[0]+BottomRightX*width,stage[2]+BottomRightY*height}:
+                  P{stage[0]+k*(o.x-stage[0]),stage[2]+BottomRightY*height};
+        const M affine{sx,0,t.x-sx*o.x,0,sy,t.y-sy*o.y};
+        if(!applyNodeStageAffine(vm,s,m,n,affine,applied,changed)||!applyNodeStageAffine(vm,s,m,h.label,affine,applied,changed))return false;
+    }
+    return true;
+}
+bool applyRaceResult(GuestVM *vm,State &s,Movie &m) {
+    float stage[4]{};
+    if(!read(vm,m.definition+0xb4,stage,sizeof(stage)))return false;
+    for(float f:stage)if(!std::isfinite(f))return false;
+    const double width=double(stage[1])-stage[0],cx=stage[0]+.5*width,k=roundButtonXScale();
+    if(!m.resultBackdrops[0].object){
+        // _root's display list (not the movie root's): the one holding
+        // anim_lines and pos_circle.
+        const std::uint32_t lines=find(vm,s,m.handler,"anim_lines"),circle=find(vm,s,m.handler,"pos_circle"),
+            root=find(vm,s,m.handler,"_root");
+        std::uint32_t words[128]{};
+        if(lines&&circle&&root&&read(vm,root,words,sizeof(words)))for(std::uint32_t list:words){
+            if(list<0x1000||list&3)continue;
+            std::uint32_t entries[128]{};if(!read(vm,list,entries,sizeof(entries)))continue;
+            int stride=0,first=0;
+            for(int i=0;i<127&&!stride;++i)if(entries[i]==lines)for(int j=i+1;j<128&&j<=i+8;++j)if(entries[j]==circle){stride=j-i;first=i%stride;break;}
+            if(!stride)continue;
+            for(int e=0;e<3;++e)bindUnnamed(vm,m.resultBackdrops[e],entries[first+e*stride]);
+            char line[160];std::snprintf(line,sizeof(line),"[race-result] backdrops=%#x %#x %#x stride=%d first=%d",
+                m.resultBackdrops[0].object,m.resultBackdrops[1].object,m.resultBackdrops[2].object,stride,first);GuestRawLog(line);
+            break;
+        }
+    }
+    const M centre{k,0,(1-k)*cx,0,1,0},widen{1/k,0,(1-1/k)*cx,0,1,0};
+    unsigned applied=0,changed=0;
+    if(!applyNodeStageAffine(vm,s,m,m.resultRoot,centre,applied,changed))return false;
+    for(auto &n:m.resultBackdrops)if(!applyNodeStageAffine(vm,s,m,n,widen,applied,changed))return false;
+    if(!placeCornerButtons(vm,s,m))return false;
+    // Edge controls: undo the root's scale, then theirs about their edge.
+    for(auto &control:m.anchoredControls)
+        if(!applyNodeStageAffine(vm,s,m,control.node,multiply(anchoredAffine(control,stage,k),widen),applied,changed))return false;
+    return !GuestHasStopRequest(vm);
+}
 bool applyPivotControls(GuestVM *vm,State &s,Movie &m) {
     for(auto &control:m.pivotControls){
         auto &n=control.node;
@@ -1024,11 +1224,9 @@ extern "C" bool AS6OriginalUIApply(GuestVM *vm,std::uint32_t handler) {
         }
         return !GuestHasStopRequest(vm);
     }
-    if(m->kind==Kind::RaceHud){
-        // Skip / next: round again on the stretched canvas, then 80%.
-        unsigned applied=0,changed=0;
-        return applyStageAffine(vm,s,*m,M{},applied,changed,RoundButtonScale*roundButtonXScale(),RoundButtonScale)&&!GuestHasStopRequest(vm);
-    }
+    if(m->kind==Kind::RaceHud)return placeCornerButtons(vm,s,*m)&&applyAnchoredControls(vm,s,*m);
+    if(m->kind==Kind::RaceEnd||m->kind==Kind::Unlock)return placeCornerButtons(vm,s,*m)&&applyAnchoredControls(vm,s,*m);
+    if(m->kind==Kind::RaceResult)return applyRaceResult(vm,s,*m);
     if(m->kind==Kind::Loading)return applyResourceForeground(vm,s,*m,h);
     // Career selection sits on the in-room 3:2 monitor: authored layout.
     if(m->kind==Kind::CareerSelection)return widenCupHitArea(vm,s,*m)&&applyCareerStars(vm,s,*m,h,metricsReady);
