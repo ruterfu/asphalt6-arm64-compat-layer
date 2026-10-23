@@ -8,17 +8,15 @@
 
 ## 特性
 
-- 在 arm64 iPhone 上运行原版 1.3.2 游戏，实测比赛中约 60 fps（其实是）
-- 适配全面屏与安全区，3D 画面按屏幕真实比例显示，界面不拉伸；生涯、自由竞速与多人游戏所在的办公室显示器同样铺满屏幕
-- 多人游戏：本地 WiFi 可进入并输入用户名（两台设备联机尚未实测）；在线（Gameloft Live 已停服）与蓝牙不可用，按钮显示为灰色
-- 信息页的 Twitter 入口改为打开 Gameloft 在 X 上的主页
-- 适配当前的 OpenGL ES 驱动
-- 移除已停止服务的商店、推广与 iPod 音乐播放器入口，App 不申请音乐库权限
-- 可选的高清背景包（16:9 与全面屏 2.2:1）
+- 在 arm64 iPhone 上运行原版《狂野飙车 6》1.3.2，iPhone 17 Pro 上比赛中平均约 58–60 fps（手机发热降频时会掉到 50 左右）
+- 仅适配 16:9 与全面屏（约 2.2:1）的 iPhone（例如 iPhone 17 Pro）：界面不拉伸，3D 画面按屏幕真实比例 1:1 显示（3D 部分需要高清背景包）。其他屏幕（例如 iPad）不做任何适配，3:2 画面直接拉伸铺满
+- 多人游戏关闭了蓝牙（不支持）和在线（估计 Gameloft 早就关闭服务器了吧）的入口；移除商店相关服务；移除 iPod 音乐库播放入口（游戏自带音乐正常）
+- 可选的高清背景包（16:9 与全面屏 2.2:1）。在这两种屏幕上，装了才会 1:1 显示 3D 画面；没装时 3D 画面按 3:2 拉伸铺满，界面仍会适配
+- **不支持 iPhone Duo机型（没机器，没钱，耗费精力不值得）iPhone Duo估计是无脑拉伸**
 
 ## 截图
 
-iPhone 17 Pro 实机截图，已装高清背景包。
+iPhone 17 Pro 实机截图，已装高清背景包。实机演示录屏：[在 X 上观看](https://x.com/ruterfu/status/2113624582498476257)
 
 | | |
 | --- | --- |
@@ -35,7 +33,7 @@ iPhone 17 Pro 实机截图，已装高清背景包。
 
 ## 工作原理
 
-构建时，游戏的 ARMv7 程序经 Ghidra 分析后被一次性转换为 C++ 源码，再由 Xcode 编译为 arm64 代码，与兼容层一起链接进 App。运行时不生成或解释任何代码（没有 JIT）。
+构建时将游戏的 ARMv7 程序经 Ghidra 分析（反汇编）后被一次性转换为 C++ 代码，再由 Xcode 编译为 arm64 代码，与兼容层一起链接进 App，运行的是原生 arm64 代码。运行时不生成或解释任何代码（没有 JIT）。
 
 转换后的代码逐条保持与原版 ARMv7 指令一致的行为，包括寄存器、32 位内存空间、条件标志与浮点运算。游戏用到的 iOS 3/4 时代系统接口（UIKit、OpenGL ES、音频、触控、重力感应等）由兼容层基于现代 iOS 接口重新实现。
 
@@ -43,20 +41,20 @@ iPhone 17 Pro 实机截图，已装高清背景包。
 
 ## 环境要求
 
-- Apple Silicon Mac
-- Xcode（含 iOS 17 及以上 SDK）
-- CMake 3.20 及以上
-- Python 3.9 及以上
+- Apple Silicon Mac（M芯片 的Mac）
+- Xcode（含 iOS 17 及以上 SDK，必须安装 应用，而不是 Command Line）
+- CMake 3.20 及以上（brew install cmake 就行）
+- Python 3.9 及以上（自带）
 
-Python 依赖、Ghidra 12.1.4 与 JDK 21 会在首次构建时自动下载到 `build/`。
+Python 依赖、Ghidra 12.1.4 与 JDK 21 会在首次构建时自动下载到 `build/`。所有编译产物都在 `build/` 下，删掉即可全部清理。
 
 ### 支持的游戏版本
 
-仅支持 **Asphalt 6 1.3.2**（p.s. 因为我一开始就下的1.3.2，不想折腾了）。IPA 可以自行在 Archive.org 搜索获取。
+仅支持 **Asphalt 6 1.3.2**（p.s. 因为我一开始就随意下的1.3.2，得知最新的是1.3.8，已经来不及了，算了不想折腾了）。IPA 可以自行在 Archive.org 搜索获取。
 
 | 项目 | 值 |
 | --- | --- |
-| IPA 文件 | `Asphalt_6__Adrenaline_1.3.2_ios_3.1.3.ipa`（564,685,789 字节） |
+| IPA 文件 | `Asphalt_6_Adrenaline_1.3.2_ios_3.1.3.ipa`（564,685,789 字节） |
 | IPA SHA-256 | `30ea95d5ccd3fb9ded3b7b6b0c9e88f6af8de62d8c841ed0a3f79be6d045a796` |
 | 游戏程序 ARMv7 部分 SHA-256 | `4a2209881ab5933113a15770b0615807cfa7d73bf50a9326569a7ed20f77df00` |
 
@@ -68,7 +66,7 @@ Python 依赖、Ghidra 12.1.4 与 JDK 21 会在首次构建时自动下载到 `b
 python3 scripts/buildGame.py /path/to/Asphalt6.ipa
 ```
 
-完整构建约 1.5–2.5 小时，大部分时间用于编译。产物位于 `dist/`：
+理论上这一句话就行，完整构建约 1.5–2.5 小时，因为需要编译3000多个 AOT文件。编译完成后，ipa文件和游戏资源包都在 `dist` 下：
 
 | 文件 | 说明 |
 | --- | --- |
@@ -82,27 +80,27 @@ python3 scripts/buildGame.py /path/to/Asphalt6.ipa
 
 ## 安装
 
-1. 签名并安装 `Asphalt6ARM64.ipa`，打开一次。
-2. 在“文件”App 中，把 `Asphalt6Data.zip` 放进 **我的 iPhone → Asphalt 6**，无需解压。
-3. 再次打开 App，资源会自动解压并校验，完成后进入游戏。
+1. 签名并安装 `Asphalt6ARM64.ipa`，打开一次（会显示请导入资源）。
+2. 在“文件”App 中，把 `Asphalt6Data.zip` 放进 **我的 iPhone → Asphalt 6**，无需解压，游戏进去后会自动解压。
+3. 再次打开 App，点击重新检测，或者直接kill掉它重开，资源会自动解压并校验，完成后进入游戏。
 
 ### 高清背景包（可选）
 
-高清背景包 `NativeArtwork.zip` 已单独上传到 Google Drive：[点此下载](https://drive.google.com/file/d/1o8iHwtRP0q2xYJgAp07VcnXXSXm7BQE5/view?usp=sharing)。把它和资源包放在同一目录，启动时会自动安装，标题、菜单与加载画面改用高清背景，全面屏机型使用 2.2:1 版本；没有时使用原版背景。
+高清背景包 `NativeArtwork.zip` 已单独上传到 Google Drive：[点此下载](https://drive.google.com/file/d/1o8iHwtRP0q2xYJgAp07VcnXXSXm7BQE5/view?usp=sharing)。把它和资源包放在同一目录，启动时会自动安装，标题、菜单与加载画面改用高清背景，同时激活1:1渲染，可以看到比原版游戏更宽的视野。
 
-高清背景以游戏原版背景为基础，使用 GPT Image 2 重绘为 16:9 与 2.2:1 两种画幅。
+>  高清背景以游戏原版背景为基础，使用 GPT Image 2 重绘为 16:9 与 2.2:1 两种画幅，分别对应 16:9 屏幕和全面屏，其他屏幕（例如 iPad）不生效。
 
 ## 测试
 
-测试设备：iPhone 17 Pro（iOS 27.0）。暂不支持 iPhone Duo。
+测试设备：iPhone 17 Pro（iOS 27.0）。不支持 iPhone Duo。
 
 | 功能 | 状态 |
 | --- | --- |
 | 生涯模式 | ✅ 正常 |
 | 单人游戏 | ✅ 正常 |
-| 联机 | ⚠️ 未测试 |
+| 联机 | ⚠️ 本地 WiFi 可进入，两台设备联机未实测；在线与蓝牙不支持 |
 
-帧率（生涯第 1 场 · 拿索，完整比赛）：
+帧率测试（生涯第 1 场 · 拿索，完整比赛）：
 
 | 版本 | 平均帧率 | 平均每帧耗时 |
 | --- | --- | --- |

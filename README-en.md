@@ -8,17 +8,15 @@ This repository contains only the compatibility layer code. It does not include 
 
 ## Features
 
-- Runs the original 1.3.2 game on arm64 iPhones, about 60 fps in races on device
-- Full-screen and safe-area layout; the 3D view uses the real screen aspect and the interface is not stretched; the office monitor showing career, quick race and multiplayer also fills the screen
-- Multiplayer: local Wi-Fi can be entered and a user name typed (a two-device match is not yet tested); online (Gameloft Live has shut down) and Bluetooth are unavailable and their buttons are greyed out
-- The Twitter entry on the info page opens Gameloft's page on X
-- Works with the current OpenGL ES driver
-- Removes the discontinued store, promotion and iPod music player entry points; the app never asks for music library access
-- Optional HD background pack (16:9 and full-screen 2.2:1)
+- Runs the original *Asphalt 6* 1.3.2 on arm64 iPhones; on an iPhone 17 Pro races average about 58–60 fps (around 50 when the phone heats up and throttles)
+- Adapted only for 16:9 and full-screen (about 2.2:1) iPhones, such as the iPhone 17 Pro: the interface is not stretched and the 3D view is shown 1:1 at the screen's real aspect (the 3D part needs the HD background pack). Other screens (such as iPad) get no adaptation; the 3:2 image is simply stretched to fill the screen
+- Multiplayer Bluetooth (unsupported) and online entries are disabled; store services are removed; the iPod music library entry is removed (the game's own music still plays)
+- Optional HD background pack (16:9 and full-screen 2.2:1). On these two screen types the 3D view is shown 1:1 only with the pack installed; without it the 3D view is stretched from 3:2 to fill the screen, while the interface is still adapted
+- **iPhone Duo is not supported**
 
 ## Screenshots
 
-Taken on an iPhone 17 Pro with the HD background pack installed.
+Taken on an iPhone 17 Pro with the HD background pack installed. Gameplay recording on device: [watch on X](https://x.com/ruterfu/status/2113624582498476257)
 
 | | |
 | --- | --- |
@@ -35,7 +33,7 @@ Taken on an iPhone 17 Pro with the HD background pack installed.
 
 ## How it works
 
-At build time, the game's ARMv7 program is analyzed with Ghidra and converted once into C++ sources, which Xcode compiles into arm64 code and links into the app together with the compatibility layer. Nothing is generated or interpreted at runtime (no JIT).
+At build time, Ghidra disassembles the game's ARMv7 program and it is converted once into C++ code, which Xcode compiles into arm64 code and links into the app together with the compatibility layer, so what runs is native arm64 code. Nothing is generated or interpreted at runtime (no JIT).
 
 The converted code keeps the exact behaviour of the original ARMv7 instructions, including registers, the 32-bit memory space, condition flags and floating point. The iOS 3/4-era system interfaces the game uses (UIKit, OpenGL ES, audio, touch, accelerometer, etc.) are re-implemented by the compatibility layer on top of modern iOS APIs.
 
@@ -43,20 +41,20 @@ Every intermediate build result is checked against fixed hashes, so the same IPA
 
 ## Requirements
 
-- Apple Silicon Mac
-- Xcode (with the iOS 17 or later SDK)
-- CMake 3.20 or later
-- Python 3.9 or later
+- Apple Silicon Mac (M-series chip)
+- Xcode (with the iOS 17 or later SDK; the full Xcode app is required, not just the Command Line Tools)
+- CMake 3.20 or later (`brew install cmake`)
+- Python 3.9 or later (bundled with macOS)
 
-The Python dependencies, Ghidra 12.1.4 and JDK 21 are downloaded into `build/` on the first build.
+The Python dependencies, Ghidra 12.1.4 and JDK 21 are downloaded into `build/` on the first build. All build output stays in `build/`; delete it to clean everything.
 
 ### Supported game version
 
-Only **Asphalt 6 1.3.2** is supported (P.S. 1.3.2 is simply the version I downloaded first, and I didn't want to deal with others). You can search Archive.org for the IPA.
+Only **Asphalt 6 1.3.2** is supported (P.S. 1.3.2 is simply the version I happened to download first; by the time I learned the latest is 1.3.8 it was too late to switch). You can search Archive.org for the IPA.
 
 | Item | Value |
 | --- | --- |
-| IPA file | `Asphalt_6__Adrenaline_1.3.2_ios_3.1.3.ipa` (564,685,789 bytes) |
+| IPA file | `Asphalt_6_Adrenaline_1.3.2_ios_3.1.3.ipa` (564,685,789 bytes) |
 | IPA SHA-256 | `30ea95d5ccd3fb9ded3b7b6b0c9e88f6af8de62d8c841ed0a3f79be6d045a796` |
 | Game program ARMv7 slice SHA-256 | `4a2209881ab5933113a15770b0615807cfa7d73bf50a9326569a7ed20f77df00` |
 
@@ -68,7 +66,7 @@ The build script checks the hash of the game program's ARMv7 slice, so a repacka
 python3 scripts/buildGame.py /path/to/Asphalt6.ipa
 ```
 
-A full build takes about 1.5–2.5 hours, mostly compiling. Outputs are written to `dist/`:
+That one command is all it takes in principle. A full build takes about 1.5–2.5 hours, since it compiles over 3,000 AOT files. When it finishes, the IPA and the game resource pack are in `dist/`:
 
 | File | Description |
 | --- | --- |
@@ -82,27 +80,27 @@ A full build takes about 1.5–2.5 hours, mostly compiling. Outputs are written 
 
 ## Installation
 
-1. Sign and install `Asphalt6ARM64.ipa`, then open it once.
-2. In the Files app, put `Asphalt6Data.zip` into **On My iPhone → Asphalt 6**. Do not unzip it.
-3. Open the app again; the resources are extracted and verified automatically, then the game starts.
+1. Sign and install `Asphalt6ARM64.ipa`, then open it once (it asks you to import the resources).
+2. In the Files app, put `Asphalt6Data.zip` into **On My iPhone → Asphalt 6**. Do not unzip it; the app extracts it.
+3. Back in the app, tap "重新检测" (check again), or quit and reopen it; the resources are extracted and verified automatically, then the game starts.
 
 ### HD background pack (optional)
 
-The HD background pack `NativeArtwork.zip` is uploaded separately to Google Drive: [download it here](https://drive.google.com/file/d/1o8iHwtRP0q2xYJgAp07VcnXXSXm7BQE5/view?usp=sharing). Put it in the same folder as the resource pack; it is installed at launch, and the title, menu and loading screens switch to HD backgrounds, using the 2.2:1 versions on full-screen phones. Without it, the original backgrounds are used.
+The HD background pack `NativeArtwork.zip` is uploaded separately to Google Drive: [download it here](https://drive.google.com/file/d/1o8iHwtRP0q2xYJgAp07VcnXXSXm7BQE5/view?usp=sharing). Put it in the same folder as the resource pack; it is installed at launch, the title, menu and loading screens switch to HD backgrounds, and the 1:1 3D view is enabled, showing a wider field of view than the original game.
 
-The HD backgrounds are based on the original game backgrounds and were redrawn in 16:9 and 2.2:1 with GPT Image 2.
+> The HD backgrounds are based on the original game backgrounds and were redrawn with GPT Image 2 in 16:9 and 2.2:1, for 16:9 screens and full-screen phones respectively. They have no effect on other screens (such as iPad).
 
 ## Testing
 
-Test device: iPhone 17 Pro (iOS 27.0). iPhone Duo is not supported yet.
+Test device: iPhone 17 Pro (iOS 27.0). iPhone Duo is not supported.
 
 | Feature | Status |
 | --- | --- |
 | Career mode | ✅ Works |
 | Single player | ✅ Works |
-| Online | ⚠️ Not tested |
+| Multiplayer | ⚠️ Local Wi-Fi can be entered; a two-device match is not tested; online and Bluetooth are unsupported |
 
-Frame rate (Career race 1 · Nassau, full race):
+Frame rate test (Career race 1 · Nassau, full race):
 
 | Version | Average frame rate | Average frame time |
 | --- | --- | --- |
