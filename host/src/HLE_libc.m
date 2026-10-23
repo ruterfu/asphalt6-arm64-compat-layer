@@ -1724,7 +1724,7 @@ HLE_DEFINE(hle_qsort) {
     if (!base || !comparator || count > UINT32_MAX / size) {
         HLESetGuestErrno(vm, EINVAL); GuestRequestHalt(vm); return;
     }
-    std::string symbol = HLECurrentSymbol() ?: "_qsort";
+    const char *const symbol = HLECurrentSymbol() ?: "_qsort";
     try {
         std::vector<uint8_t> original(count * size), sorted(count * size);
         if (!GuestRead(vm, base, original.data(), original.size())) {
@@ -1737,7 +1737,7 @@ HLE_DEFINE(hle_qsort) {
         std::sort(order.begin(), order.end(), [&](uint32_t a, uint32_t b) {
             uint32_t args[2] = {base + (uint32_t)(a * size), base + (uint32_t)(b * size)};
             int32_t compared = (int32_t)GuestCall(vm, comparator, args, 2, 10000000);
-            HLESetCurrentSymbol(symbol.c_str());
+            HLESetCurrentSymbol(symbol);
             return compared < 0;
         });
         for (size_t i = 0; i < count; i++)
@@ -1748,7 +1748,7 @@ HLE_DEFINE(hle_qsort) {
     } catch (const std::bad_alloc &) {
         HLESetGuestErrno(vm, ENOMEM); GuestRequestHalt(vm);
     }
-    HLESetCurrentSymbol(symbol.c_str());
+    HLESetCurrentSymbol(symbol);
 }
 HLE_BIND("_qsort", hle_qsort)
 HLE_DEFINE(hle_rand) { GuestSetRet(vm, (uint32_t)rand()); }

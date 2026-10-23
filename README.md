@@ -8,13 +8,30 @@
 
 ## 特性
 
-- 在 arm64 iPhone 上运行原版 1.3.2 游戏，实测比赛中约 60 fps
+- 在 arm64 iPhone 上运行原版 1.3.2 游戏，实测比赛中约 60 fps（其实是）
 - 适配全面屏与安全区，3D 画面按屏幕真实比例显示，界面不拉伸；生涯、自由竞速与多人游戏所在的办公室显示器同样铺满屏幕
 - 多人游戏：本地 WiFi 可进入并输入用户名（两台设备联机尚未实测）；在线（Gameloft Live 已停服）与蓝牙不可用，按钮显示为灰色
 - 信息页的 Twitter 入口改为打开 Gameloft 在 X 上的主页
 - 适配当前的 OpenGL ES 驱动
 - 移除已停止服务的商店、推广与 iPod 音乐播放器入口，App 不申请音乐库权限
 - 可选的高清背景包（16:9 与全面屏 2.2:1）
+
+## 截图
+
+iPhone 17 Pro 实机截图，已装高清背景包。
+
+| | |
+| --- | --- |
+| ![标题画面](images/title.jpg) | ![主菜单](images/menu.jpg) |
+| 标题画面 | 主菜单 |
+| ![生涯联赛](images/career.jpg) | ![选车](images/car-select.jpg) |
+| 生涯联赛 | 选车 |
+| ![改装](images/tuning.jpg) | ![车库](images/garage.jpg) |
+| 改装 | 车库 |
+| ![比赛加载](images/loading.jpg) | ![比赛中](images/race.jpg) |
+| 比赛加载 | 比赛中 |
+| ![淘汰](images/elimination.jpg) | ![比赛结算](images/win.jpg) |
+| 淘汰 | 比赛结算 |
 
 ## 工作原理
 

@@ -9,7 +9,9 @@
 #import "GuestVM.h"
 
 static std::unordered_map<std::string, HLEImpl> g_impls;
-static thread_local std::string g_currentSymbol;
+// The current import's name. Every value set is a string that outlives its
+// use (the static bridge table, or a caller's saved value it restores).
+static thread_local const char *g_currentSymbol = "";
 static std::unordered_map<std::string, NSUInteger> g_needed;
 static os_unfair_lock g_lock = OS_UNFAIR_LOCK_INIT;
 static std::atomic<uint64_t> g_generation{0};
@@ -17,7 +19,7 @@ static std::atomic<uint64_t> g_generation{0};
 void HLESetCurrentSymbol(const char *symbol) {
     g_currentSymbol = symbol ? symbol : "";
 }
-const char *HLECurrentSymbol(void) { return g_currentSymbol.c_str(); }
+const char *HLECurrentSymbol(void) { return g_currentSymbol; }
 
 void HLERegister(const char *symbol, HLEImpl impl) {
     os_unfair_lock_lock(&g_lock);

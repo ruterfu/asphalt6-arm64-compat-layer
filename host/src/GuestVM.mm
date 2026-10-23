@@ -1463,18 +1463,14 @@ GuestExecutionResult GuestEmulate(GuestVM *vm,gva_t begin,gva_t until,uint64_t m
         if(vm->_halt)return Finish(vm,GuestExecutionHalted);
         // HLE calls happen only after the C++ NativeProgram frame is gone.
         // Preserve nesting/current import identity around callbacks.
-        // Saved per nesting level in reused buffers: no allocation per call.
-        static thread_local std::vector<std::string> savedSymbols;
-        static thread_local std::size_t savedDepth=0;
-        const std::size_t level=savedDepth++;
-        if(savedSymbols.size()<=level)savedSymbols.emplace_back();
-        savedSymbols[level].assign(HLECurrentSymbol()?HLECurrentSymbol():"");
+        // The names are static (the bridge table): save the pointer, no copy.
+        const char *const savedSymbol=HLECurrentSymbol();
         HLESetCurrentSymbol(bridge->symbol);
         @try { HLEPosixPoll(vm); if (!vm->_fault) impl(vm); }
         @catch (NSException *exception) {
             GuestTrace(vm,@"[native] bridge %s raised %@",bridge->symbol,exception.name);
             vm->_fault=true;
-        } @finally { HLESetCurrentSymbol(savedSymbols[level].c_str()); --savedDepth; }
+        } @finally { HLESetCurrentSymbol(savedSymbol); }
         if (vm->_fault) return Finish(vm,GuestExecutionInvalidState);
         if (vm->_halt) return Finish(vm,GuestExecutionHalted);
         if (GuestAudioProducerWasCancelled(vm)) return Finish(vm,GuestExecutionCancelled);

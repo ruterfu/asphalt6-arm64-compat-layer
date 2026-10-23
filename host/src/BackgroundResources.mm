@@ -7,6 +7,7 @@
 #import <fcntl.h>
 #include <cstdlib>
 #include "BackgroundAspect.hpp"
+#include "ScreenProfile.h"
 #include "DecodedArtwork.hpp"
 #include <array>
 #include <unordered_map>
@@ -171,9 +172,12 @@ static NSString *Candidate(NSString *path) {
     const bool fullScreenUI = uiSpec && (uiSpec->profile == UIProfile::Unlocks000630 || uiSpec->profile == UIProfile::Unlocks000316Retina ||
         uiSpec->profile == UIProfile::NextEvents000683 || uiSpec->profile == UIProfile::NextEvents000184Retina);
     const bool menuBackground = uiSpec && !fullScreenUI;
-    // Full-screen phones (wider than 2:1) use each art's 2.2:1 version when the
-    // pack has one.
-    const bool wideArt = width / height > 2.0;
+    // Only adapted screens take the HD art: full-screen phones each art's
+    // 2.2:1 version when the pack has one, 16:9 phones the 16:9 one. Other
+    // screens keep the original art.
+    const int screen = AS6ScreenProfile();
+    if (screen == AS6ScreenPlain) return path;
+    const bool wideArt = screen == AS6ScreenWide;
     const auto artName = [wideArt](const char *name) -> const char * {
         const char *wide = wideArt ? as6_art_variant::WideName(name) : nullptr;
         return wide ? wide : name;

@@ -210,7 +210,7 @@ extern "C" void HLEPosixPoll(GuestVM *vm) {
         if (GuestCPUSave(vm, state.context) != GuestExecutionSuccess) {
             request->notified = false; g_posixReady.store(true); continue;
         }
-        std::string current = HLECurrentSymbol() ?: "";
+        const char *const current = HLECurrentSymbol() ?: "";
         uint32_t maskBefore = g_guestSignalMask;
         g_guestSignalMask |= action.mask;
         if (!(action.flags & SA_NODEFER)) g_guestSignalMask |= bit;
@@ -229,7 +229,7 @@ extern "C" void HLEPosixPoll(GuestVM *vm) {
         GuestCall(vm, action.handler, args, count, 100000000);
         g_guestSignalMask = maskBefore;
         GuestCPURestore(vm, state.context);
-        HLESetCurrentSymbol(current.c_str());
+        HLESetCurrentSymbol(current);
     }
     g_deliveringPosixSignal = false;
     GuestUnlock(vm);

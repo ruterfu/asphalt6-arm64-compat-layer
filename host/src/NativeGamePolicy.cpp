@@ -4,6 +4,7 @@
 #include "OriginalUIBoundary.hpp"
 #include "NativeMusicBoundary.hpp"
 #include "PostEffectsTargetSize.hpp"
+#include "ScreenProfile.h"
 #include <atomic>
 #include <cerrno>
 #include <cmath>
@@ -234,7 +235,8 @@ Status WidePerspective(Context &ctx, bool legacy, std::uint32_t stop_pc, bool st
         (pc != PerspectiveFov && pc != PerspectiveFovInfinity)) return ctx.status = InvalidState;
     if ((!legacy && pc == stop_pc && ctx.isa_thumb == stop_thumb) || !ctx.budget)
         return original(ctx, legacy, stop_pc, stop_thumb);
-    const double stretch = AS6CanvasHorizontalStretch();
+    // Without the HD pack the 3D image is only scaled (AS6ScreenShowsWideView).
+    const double stretch = AS6ScreenShowsWideView() ? AS6CanvasHorizontalStretch() : 1;
     const auto bits = std::uint32_t(read_bytes(ctx.registers, layout::r2, 4));
     float aspect;
     std::memcpy(&aspect, &bits, 4);

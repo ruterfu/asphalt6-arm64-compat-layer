@@ -16,6 +16,23 @@ This repository contains only the compatibility layer code. It does not include 
 - Removes the discontinued store, promotion and iPod music player entry points; the app never asks for music library access
 - Optional HD background pack (16:9 and full-screen 2.2:1)
 
+## Screenshots
+
+Taken on an iPhone 17 Pro with the HD background pack installed.
+
+| | |
+| --- | --- |
+| ![Title screen](images/title.jpg) | ![Main menu](images/menu.jpg) |
+| Title screen | Main menu |
+| ![Career league](images/career.jpg) | ![Car selection](images/car-select.jpg) |
+| Career league | Car selection |
+| ![Tuning](images/tuning.jpg) | ![Garage](images/garage.jpg) |
+| Tuning | Garage |
+| ![Race loading](images/loading.jpg) | ![In the race](images/race.jpg) |
+| Race loading | In the race |
+| ![Elimination](images/elimination.jpg) | ![Race result](images/win.jpg) |
+| Elimination | Race result |
+
 ## How it works
 
 At build time, the game's ARMv7 program is analyzed with Ghidra and converted once into C++ sources, which Xcode compiles into arm64 code and links into the app together with the compatibility layer. Nothing is generated or interpreted at runtime (no JIT).

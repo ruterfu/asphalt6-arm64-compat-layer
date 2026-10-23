@@ -21,6 +21,7 @@
 #include <chrono>
 #include "SafeAreaCanvasGeometry.hpp"
 #include "OriginalUIHostMetrics.hpp"
+#include "ScreenProfile.h"
 #include <cmath>
 
 static gva_t g_guestAppDelegate = 0;
@@ -199,7 +200,26 @@ extern "C" bool GuestCopyOriginalUIHostMetrics(AS6OriginalUIHostMetrics *out) {
 // Width stretch of the original landscape canvas (portrait bounds w x h shown
 // as h x w) to the full window; read by the perspective policy each frame.
 static std::atomic<double> g_canvasHorizontalStretch{1.0};
-extern "C" double AS6CanvasHorizontalStretch(void) { return g_canvasHorizontalStretch.load(std::memory_order_relaxed); }
+// A Plain screen is only scaled: no consumer of the stretch adapts anything.
+extern "C" double AS6CanvasHorizontalStretch(void) {
+    return AS6ScreenProfile() == AS6ScreenPlain ? 1.0 : g_canvasHorizontalStretch.load(std::memory_order_relaxed);
+}
+static std::atomic<int> g_screenProfile{-1};
+extern "C" int AS6ScreenProfileDetect(void) {
+    int profile = g_screenProfile.load(std::memory_order_relaxed);
+    if (profile >= 0) return profile;
+    const CGSize size = UIScreen.mainScreen.bounds.size;
+    const CGFloat longSide = MAX(size.width, size.height), shortSide = MIN(size.width, size.height);
+    const double ratio = shortSide > 0 ? longSide / shortSide : 0;
+    profile = ratio >= 1.9 ? AS6ScreenWide : ratio >= 1.7 ? AS6ScreenSixteenNine : AS6ScreenPlain;
+    g_screenProfile.store(profile, std::memory_order_relaxed);
+    fprintf(stderr, "[screen] %.0fx%.0f ratio %.3f profile %s\n", longSide, shortSide, ratio,
+            profile == AS6ScreenWide ? "wide (2.2:1)" : profile == AS6ScreenSixteenNine ? "16:9" : "plain (scaled only)");
+    return profile;
+}
+extern "C" int AS6ScreenProfile(void) { const int p = g_screenProfile.load(std::memory_order_relaxed); return p < 0 ? AS6ScreenPlain : p; }
+extern "C" BOOL AS6HDArtworkAvailable(void);
+extern "C" int AS6ScreenShowsWideView(void) { return AS6ScreenProfile() != AS6ScreenPlain && AS6HDArtworkAvailable(); }
 // The info page's Twitter entry: Gameloft's page on X, in the browser/X app.
 extern "C" void AS6OpenGameloftX(void) {
     dispatch_async(dispatch_get_main_queue(), ^{

@@ -293,7 +293,13 @@ def write_data_bundle(armv7, target, log):
 
 
 def hook_modules(reference, target, log):
-    """Copies of translated modules with the layer's boundary hooks added."""
+    """Copies of translated modules with the layer's boundary hooks added, then
+    given the same block-structured fast path as the other modules."""
+    import importlib.util
+    spec_ = importlib.util.spec_from_file_location('as6_promote', HERE / 'promote.py')
+    promote = importlib.util.module_from_spec(spec_)
+    spec_.loader.exec_module(promote)
+    entries = promote.branch_targets(sorted(reference.glob('native_*.cpp')))
     target.mkdir(parents=True, exist_ok=True)
     for spec in json.loads((HERE / 'data/module-hooks.json').read_text()):
         source = (reference / spec['module']).read_text()
@@ -305,6 +311,10 @@ def hook_modules(reference, target, log):
         text = '\n'.join(lines)
         if hashlib.sha256(text.encode()).hexdigest() != spec['sha256']:
             raise SystemExit('hooked module differs: ' + spec['output'])
+        try:
+            text = promote.promote(text, entries)
+        except promote.Refused as error:
+            log('codegen: %s kept unpromoted (%s)' % (spec['output'], error))
         (target / spec['output']).write_text(text)
     log('codegen: hooked modules written')
 

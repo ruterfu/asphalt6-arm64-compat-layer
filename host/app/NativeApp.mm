@@ -5,6 +5,7 @@ extern "C" BOOL GuestConfigurePNGProgressFile(GuestVM *,const char *);
 #import "HLE.h"
 #import "ResourcePaths.h"
 #import "HDArtworkPack.hpp"
+#include "ScreenProfile.h"
 #import "ResourceArchives.hpp"
 #include "NativeBuildConfig.hpp"
 #include "ProcessArguments.hpp"
@@ -262,7 +263,9 @@ static BOOL BootNativeGame(void) {
                 }
                 break;
             }
-            // The scan result is kept for the rest of the run (AS6HDArtworkAvailable).
+            // The scan result is kept for the rest of the run (AS6HDArtworkAvailable),
+            // as is the screen class.
+            AS6ScreenProfileDetect();
             const BOOL artworkComplete=AS6HDArtworkScan();
             if(!triedArtwork&&!artworkComplete&&AS6HDArtworkArchivePresent()) {
                 triedArtwork=YES;

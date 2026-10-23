@@ -4,6 +4,7 @@
 #include "OriginalUIGeometry.hpp"
 #include "OriginalUIHostMetrics.hpp"
 #include "CareerStarLayout.hpp"
+#include "ScreenProfile.h"
 #include <array>
 #include <cmath>
 #include <cstdio>
@@ -54,7 +55,10 @@ struct PivotControl { Node node;P pivot{};double sx=1,sy=1; };
 // on the bottom right reference's row.
 enum class Corner { TopLeft, BottomRight, InPlace };
 struct CornerButton { Node button,label;P circle{};double diameter=0;Corner corner=Corner::TopLeft; };
-struct AnchoredControl { Node node;double anchor=.5,scale=1,dx=0,dy=0; };
+// An anchor of OwnCentre is the centre of the node's own box instead (where
+// the movie's script places it, on screen or parked off it).
+constexpr double OwnCentre=-1;
+struct AnchoredControl { Node node;double anchor=.5,scale=1,dx=0,dy=0,centre=0;bool centreKnown=false; };
 M anchoredAffine(const AnchoredControl &c,const float *stage,double k) {
     const double width=double(stage[1])-stage[0],height=double(stage[3])-stage[2],x=stage[0]+c.anchor*width;
     return {k*c.scale,0,(1-k*c.scale)*x+c.dx*width,0,c.scale,(1-c.scale)*stage[3]+c.dy*height};
@@ -65,12 +69,15 @@ struct Mapping {
     Rect stageClip{};
     double roundTripPixels=0;
 };
-enum class Kind { Unknown, Loading, Menu, Race, TrackPlane, CareerSelection, PauseMenu, RaceHud, Multiplayer, Paint, Tuning, Info, RaceEnd, Unlock, RaceResult };
+enum class Kind { Unknown, Loading, Menu, Race, TrackPlane, CareerSelection, PauseMenu, RaceHud, Multiplayer, Paint, Tuning, Info, RaceEnd, Unlock, RaceResult, Title };
 bool adapted(Kind k) { return k!=Kind::Unknown&&k!=Kind::Race&&k!=Kind::TrackPlane; }
 struct Movie {
     std::uint32_t handler=0,root=0,definition=0,context=0;
     Kind kind=Kind::Unknown;
     Node gameloftLive{"mega_mc.btn_GLIVE"};
+    // Whether this movie has mega_mc (the 2D menus holding GLIVE): -1 not
+    // known yet, 0 never (no per-boundary GLIVE lookups), 1 yes.
+    int gameloftLiveHost=-1;
     Node careerStars{"star_career"};
     Node carInfo{"mega_mc.car_info_stuff"},carInfoBar{"mega_mc.car_info_stuff.low_bar"},carInfoBackdrop;
     bool careerStarsReadyLogged=false;
@@ -218,6 +225,14 @@ bool hideGameloftLive(GuestVM *vm,State &s,Movie &m) {
     std::uint32_t file=0;
     if(m.handler<=UINT32_MAX-0x228u&&word(vm,m.handler+0x228u,file)&&file==9u)
         return !GuestHasStopRequest(vm);
+    // Only the 2D menus (mega_mc, placed on their first frame) hold GLIVE; a
+    // movie still without mega_mc after its first 30 boundaries never looks
+    // it up again (a lookup per boundary was ~3% of a race frame).
+    if(m.gameloftLiveHost<0){
+        if(find(vm,s,m.handler,"mega_mc"))m.gameloftLiveHost=1;
+        else if(m.advances>30)m.gameloftLiveHost=0;
+    }
+    if(!m.gameloftLiveHost)return !GuestHasStopRequest(vm);
     auto &node=m.gameloftLive;
     if(!resolve(vm,s,m,node)){
         // The AS2 timeline may create this instance after the first lookup.
@@ -283,7 +298,7 @@ double roundButtonXScale() {
 // aspect about the centre (a wider screen loses some top and bottom).
 double backdropStripY(double in16x9,double in22x1) {
     const double k=roundButtonXScale(),aspect=1.5/k;
-    const bool wide=aspect>2;
+    const bool wide=AS6ScreenProfile()==AS6ScreenWide;
     const double art=wide?2868./1320:16./9;
     double y=wide?in22x1:in16x9;
     if(aspect>art){const double visible=art/aspect;y=(y-(1-visible)/2)/visible;}
@@ -370,6 +385,12 @@ bool identify(GuestVM *vm,State &s,Movie &m) {
         m.groups.push_back({{Node{}}}); // stats panel frame: unnamed, bound in AS6OriginalUIApply
     } else if(find(vm,s,m.handler,"hud.mc_touchToSkip.btn_skip")) {
         m.kind=Kind::RaceHud;
+    } else if(find(vm,s,m.handler,"press_screen")&&find(vm,s,m.handler,"g_loft")) {
+        // Title screen: "touch to continue" and the copyright line, centred
+        // full-width text boxes, about the centre; the backdrop and the
+        // full-screen touch area keep filling the screen.
+        m.kind=Kind::Title;
+        for(const char *p:{"mc_text","g_loft"})anchored(m,p,.5);
     } else if(find(vm,s,m.handler,"screen.unlocked_title")) {
         // Unlock screen: the title, stats and skip keep their place against the
         // left edge, the car name and continue against the right; the
@@ -404,14 +425,15 @@ bool identify(GuestVM *vm,State &s,Movie &m) {
         // The track name and race type stay in their strips of the (widened)
         // backdrop: about the name's left edge (stage x 178 of 1152) and the
         // right-aligned race type's right edge (678).
-        // Down into the strips (measured at their middles, 19% and 34%
-        // across): the name (centred 10.9% down) into the wide one below it,
-        // the race type (16.5%) into the narrow one below it.
+        // Into the strips: the name (centred 10.9% down; strip measured at
+        // its middle, 19% across) into the wide one below it; the race type
+        // (16.5%) into the narrow one, measured near its right end (56%
+        // across, where even a short name sits; the strips rise to the right).
         anchored(m,"my_track_name_txt",178./1152,1,0,backdropStripY(.129,.144)-.109);
-        anchored(m,"race_type_txt",678./1152,1,0,backdropStripY(.190,.197)-.165);
+        anchored(m,"race_type_txt",678./1152,1,0,backdropStripY(.158,.157)-.165);
         // The career total a little smaller and in from the corner, Next
         // further in from its corner too.
-        for(const char *p:{"totalCareer_txt","cash7_txt"})anchored(m,p,0,.8,.03,0);
+        for(const char *p:{"totalCareer_txt","cash7_txt"})anchored(m,p,0,.8,.05,-.03);
         anchored(m,"RaceType_Icon",1);
         corner(m,"result_next_btn","",{93,-11.5},96,Corner::BottomRight); // its label is inside; circle measured on screen
     } else if(find(vm,s,m.handler,"menu_NextEvent.grp_next_event")) {
@@ -439,6 +461,17 @@ bool identify(GuestVM *vm,State &s,Movie &m) {
         // the right, the star row centred; the race's centred banners too.
         anchored(m,"hud.Stars_mc.mc_title",0);anchored(m,"hud.Stars_mc.mc_objectives",1);
         for(const char *p:{"hud.Stars_mc.mc_bottomStars","hud.WinLose_txt","hud.anim_elimination","hud.anim_wrecked","hud.anim_youLose","hud.WrongWay","hud.countdown_mc"})anchored(m,p,.5);
+        // In-race messages ("Wrecked!", "Unique!", cash picked up...) and the
+        // opponents' name tags keep the movie's own layout: the messages park
+        // off screen between showings, the tags follow their 3D cars.
+        // The top bar: its panels and the nitro gauge (its empty track is part
+        // of the centre panel) keep spanning the screen; the position, laps,
+        // speed, their labels, the timers and meters, and the two round
+        // buttons in its corners regain their shape where they are.
+        for(const char *p:{"hud.container.counter_left","hud.container.counter_right","hud.container.speed_value",
+                           "hud.container.left_txt","hud.container.right_txt","hud.container.timer_1","hud.container.timer_2",
+                           "hud.container.timer_3","hud.container.drift_meter","hud.container.life_meter","hud.btn_igm","hud.btn_info"})
+            anchored(m,p,OwnCentre);
         // Achievement pop-ups: the bottom one centred, the others against the left edge.
         anchored(m,"sym_achievement_bottom",.5);
         for(const char *p:{"sym_achievement_left","sym_achievement_bottom_left"})anchored(m,p,0);
@@ -915,8 +948,24 @@ bool applyAnchoredControls(GuestVM *vm,State &s,Movie &m) {
     for(float f:stage)if(!std::isfinite(f))return false;
     const double k=roundButtonXScale();
     unsigned applied=0,changed=0;
-    for(auto &control:m.anchoredControls)
+    for(auto &control:m.anchoredControls){
+        if(control.anchor==OwnCentre){
+            // Measured while unshifted (after the advance restore), then kept
+            // for the frame's later boundaries: the box of a shifted node is
+            // no longer its authored one.
+            auto &n=control.node;
+            if(!resolve(vm,s,m,n))continue;
+            Geometry geo;Rect box;
+            if(!n.shifted&&nodeGeometry(vm,s,n,geo)&&bounds(geo.stage,box)){control.centre=(box.x0+box.x1)*.5;control.centreKnown=true;}
+            if(!control.centreKnown)continue;
+            // Parked off screen (centre outside the stage): left exactly as
+            // the movie has it.
+            if(control.centre<stage[0]||control.centre>stage[1]){if(!restore(vm,s,n))return false;continue;}
+            if(!applyNodeStageAffine(vm,s,m,n,M{k,0,(1-k)*control.centre,0,1,0},applied,changed))return false;
+            continue;
+        }
         if(!applyNodeStageAffine(vm,s,m,control.node,anchoredAffine(control,stage,k),applied,changed))return false;
+    }
     return !GuestHasStopRequest(vm);
 }
 // Reference corners as measured on screen (fractions of the screen): top
@@ -1067,6 +1116,7 @@ namespace as6_original_ui { namespace {
 // With or without the HD pack: without it the widened pages' backgrounds are
 // the original art, stretched.
 double officeMonitorWidening() {
+    if(!AS6ScreenShowsWideView())return 1;
     const double stretch=AS6CanvasHorizontalStretch();
     return std::isfinite(stretch)&&stretch>1.001&&stretch<3?stretch*1.22:1;
 }
@@ -1165,6 +1215,13 @@ extern "C" bool AS6OriginalUIApply(GuestVM *vm,std::uint32_t handler) {
     if(!s.scratch)s.scratch=GuestAlloc(vm,4096);if(!s.scratch)return false;
     if(onOfficeMonitor(vm,s,*m)&&!widenMonitorStage(vm,s,*m))return false;
     if(!identify(vm,s,*m))return !GuestHasStopRequest(vm);
+    // A Plain screen is only scaled: no layout adaptation, only the fixes of
+    // what does not work (unavailable multiplayer services, the cup row).
+    if(AS6ScreenProfile()==AS6ScreenPlain){
+        if(m->kind==Kind::Multiplayer)return disableUnavailableButtons(vm,s,*m)&&restoreMovie(vm,s,*m);
+        if(m->kind==Kind::CareerSelection)return widenCupHitArea(vm,s,*m)&&restoreMovie(vm,s,*m);
+        return restoreMovie(vm,s,*m);
+    }
     float scale=0;std::uint32_t driver=0;
     scaleAndDriver(vm,scale,driver); // Diagnostic only: layout uses native ratios and authored stage.
     if(!m->identifiedLog){m->identifiedLog=true;GuestTrace(vm,@"[original-ui] identified kind=%u handler=%#x root=%#x definition=%#x Host=(%.1f %.1f) safe=(%.4f %.4f %.4f %.4f) view=(%.1f %.1f) scale=%.2f driver=%#x revision=%llu",
@@ -1226,6 +1283,7 @@ extern "C" bool AS6OriginalUIApply(GuestVM *vm,std::uint32_t handler) {
     }
     if(m->kind==Kind::RaceHud)return placeCornerButtons(vm,s,*m)&&applyAnchoredControls(vm,s,*m);
     if(m->kind==Kind::RaceEnd||m->kind==Kind::Unlock)return placeCornerButtons(vm,s,*m)&&applyAnchoredControls(vm,s,*m);
+    if(m->kind==Kind::Title)return applyAnchoredControls(vm,s,*m);
     if(m->kind==Kind::RaceResult)return applyRaceResult(vm,s,*m);
     if(m->kind==Kind::Loading)return applyResourceForeground(vm,s,*m,h);
     // Career selection sits on the in-room 3:2 monitor: authored layout.

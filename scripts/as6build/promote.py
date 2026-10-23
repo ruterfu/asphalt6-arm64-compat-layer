@@ -8,7 +8,8 @@ Guest data stores may alias Context, so none of that traffic can be removed by
 the compiler. This rewrite emits, next to the unchanged original (renamed
 `<fn>_exact`), a fast function with the same signature:
 
-* Basic blocks start at every in-module branch target, after every exit,
+* Basic blocks start at every in-module branch target, at every direct branch
+  target in another module (a loop may span two modules), after every exit,
   branch or mode write, and at the first instruction. Only block leaders are
   entries of the fast function; every other entry calls the exact function.
 * A leader checks once that the mode is the module's, the budget covers the
@@ -25,6 +26,14 @@ the compiler. This rewrite emits, next to the unchanged original (renamed
 * `if (ctx.status != Returned) return ctx.status;` remains only after helpers
   that take ctx or after a status write: nothing else changes status, and the
   fast function is entered with status == Returned (else: exact function).
+
+* A boundary hook the layer inserted in an instruction's prologue, before its
+  budget decrement (`if (...as6_*_boundary::tryDirect/shouldSuspend(ctx...))
+  return X;`), makes that instruction a leader. After the leader's checks the
+  fast function writes pc, mode and budget to ctx exactly as the exact
+  prologue has them there, with every register already in ctx, and runs the
+  hook unchanged; if it declines (hooks only read ctx then), the block runs
+  fast.
 
 The transform refuses a module whose shape differs from these assumptions; such
 a module is emitted unchanged.
@@ -58,6 +67,9 @@ THUMB_WRITE = re.compile(r'\bctx\.isa_thumb\s*=(?!=)')
 RESERVED = re.compile(r'(?<!ctx\.)\b(next_pc|budget|isa_thumb|regs|as6_\w*exit\w*|entry_ins_\w+)\b')
 RETURN = re.compile(r'\breturn ([^;]+);')
 ALLOWED_CTX = {'registers', 'next_pc', 'budget', 'isa_thumb', 'status'}
+# An instruction's comment names a direct branch target: `b 0x...`, `bne 0x...`.
+HOOK = re.compile(r'^    if ?\((!legacy && )?as6_\w+_boundary::(tryDirect|shouldSuspend)\(ctx(, ?\w+)*\)\) return \w+;$')
+DIRECT_BRANCH = re.compile(r'^ins_[0-9a-f]+: // (?!bic)b\w*\s+0x([0-9a-f]+)\s*$', re.M)
 REGISTER_FILE_SIZE = 1024
 SLOW = 'static_cast<Status>(0xff)'
 
@@ -104,7 +116,15 @@ def prune_status_checks(lines):
     return out
 
 
-def promote(source):
+def branch_targets(sources):
+    """Every direct branch target in the program (pc values)."""
+    targets = set()
+    for path in sources:
+        targets.update(int(t, 16) for t in DIRECT_BRANCH.findall(path.read_text()))
+    return frozenset(targets)
+
+
+def promote(source, entries=frozenset()):
     match = SIGNATURE.search(source)
     if not match or len(SIGNATURE.findall(source)) != 1:
         raise Refused('expected exactly one translated function')
@@ -114,7 +134,7 @@ def promote(source):
     if end < 0:
         raise Refused('function end not found')
     body = source[start:end + 1]
-    check_function(body)
+    check_function('\n'.join(line for line in body.split('\n') if not HOOK.match(line)))
 
     switch_at = body.find('    switch (')
     switch_end = body.find('\n    }\n', switch_at)
@@ -131,16 +151,22 @@ def promote(source):
         chunk = text[head.end() + 1:heads[i + 1].start() if i + 1 < len(heads) else len(text)]
         lines = chunk.rstrip('\n').split('\n')
         pc = head.group(2)
+        hook = None
+        if len(lines) > 6 and HOOK.match(lines[5]):
+            hook = lines.pop(5)
         if lines[:6] != [line.format(pc=pc) for line in PROLOGUE]:
             raise Refused('instruction prologue shape at ' + pc)
-        instructions.append(dict(label=head.group(1), pc=int(pc, 16), comment=head.group(3), lines=lines[6:]))
+        rest = lines[6:]
+        if any(HOOK.match(line) for line in rest):
+            raise Refused('boundary hook not at an instruction start: ' + pc)
+        instructions.append(dict(label=head.group(1), pc=int(pc, 16), comment=head.group(3), lines=rest, hook=hook))
     order = {ins['label']: i for i, ins in enumerate(instructions)}
     if len(cases) != len(instructions) or any(order.get(label) != i for i, (key, label) in enumerate(cases)):
         raise Refused('switch does not list every instruction in order')
     if any(int(key, 16) != ins['pc'] << 1 for (key, _), ins in zip(cases, instructions)):
         raise Refused('switch keys are not ARM-mode instruction addresses')
 
-    leaders = {0}
+    leaders = {i for i, ins in enumerate(instructions) if i == 0 or ins['pc'] in entries or ins['hook']}
     for i, ins in enumerate(instructions):
         joined = '\n'.join(ins['lines'])
         sequential = instructions[i + 1]['label'] if i + 1 < len(instructions) else None
@@ -213,6 +239,10 @@ def promote(source):
             fast.append('    if (isa_thumb || budget < %d || (!legacy && !stop_thumb && stop_pc >= 0x%xu && stop_pc <= 0x%xu))'
                         % (length, ins['pc'], last_pc))
             fast.append('        { as6_exit_status = %s; goto as6_exit; }' % SLOW)
+            if ins['hook']:
+                fast.append('    ctx.next_pc = 0x%xu; write_bytes(ctx.registers, 92, 4, Word(ctx.next_pc));' % ins['pc'])
+                fast.append('    ctx.isa_thumb = false; ctx.budget = budget;')
+                fast.append(ins['hook'])
             fast.append('    budget -= %d;' % length)
             fast += ['    std::memcpy(regs + %d, ctx.registers + %d, %d);' % (x, x, y - x) for x, y in block_sets[a][0]]
         refund = length - position - 1
@@ -246,6 +276,7 @@ def main():
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
     names = args.only or sorted(p.name for p in args.source.glob('native_*.cpp'))
+    entries = branch_targets(sorted(args.source.glob('native_*.cpp')))
     refused = 0
     if args.quiet:
         from tqdm import tqdm
@@ -253,7 +284,7 @@ def main():
     for name in names:
         source = (args.source / name).read_text()
         try:
-            text = promote(source)
+            text = promote(source, entries)
         except Refused as error:
             refused += 1
             if not args.quiet:

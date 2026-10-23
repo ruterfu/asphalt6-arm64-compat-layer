@@ -99,11 +99,11 @@ void HLEPthreadTakeCPU(GuestVM *vm) { if(vm)SchedTake(vm); }
 // Every activation retains both its VM and exact saved snapshot. A successful
 // Begin acquires a Core lifetime borrow before suspending any lock level.
 struct GuestBlock {
-    __strong GuestVM *vm;NSUInteger depth;std::string symbol;
+    __strong GuestVM *vm;NSUInteger depth;const char *symbol;
     uint64_t identity=0;GuestCpuState saved;bool borrowed=false;
 };
 static bool GuestBlockBegin(GuestVM *vm,GuestBlock &block) {
-    block.vm=vm;block.depth=0;block.symbol=HLECurrentSymbol()?:"";
+    block.vm=vm;block.depth=0;block.symbol=HLECurrentSymbol()?:""; // a static name (see HLESetCurrentSymbol)
     const auto ready=GuestSchedulerCanBlockLocked(vm);
     if(ready!=GuestExecutionSuccess){const bool stopped=GuestHasStopRequest(vm);if(!stopped)GuestRequestFault(vm);errno=stopped?ECANCELED:EIO;return false;}
     block.identity=GuestSchedulerOwnerLocked(vm);
@@ -153,7 +153,7 @@ static bool GuestBlockEnd(GuestVM *vm,GuestBlock &block) {
                 }
             }
             if(!restored)GuestRequestFault(vm);
-            HLESetCurrentSymbol(block.symbol.c_str());
+            HLESetCurrentSymbol(block.symbol);
         } @finally {
             GuestSchedulerBorrowEndLocked(vm,block.identity);block.borrowed=false;
         }
