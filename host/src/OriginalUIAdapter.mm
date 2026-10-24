@@ -1001,6 +1001,35 @@ bool placeCornerButtons(GuestVM *vm,State &s,Movie &m) {
     }
     return true;
 }
+// anim_lines (the rows sliding in) holds, until its frame 61, a bar shape
+// parked left of the stage (x -205..-55): off screen in the original, but the
+// root's centring above brings that margin on screen. Hide it, as the
+// original's screen edge did. Only a shape drawn exactly in anim_lines' own
+// space (same world matrix) is it: the row icons sit inside their rows.
+constexpr std::uint32_t ShapeVtable=0x72184c;
+bool hideParkedResultBar(GuestVM *vm,State &s,Movie &m) {
+    const std::uint32_t lines=find(vm,s,m.handler,"anim_lines");
+    std::uint32_t words[128]{},pointer=0;std::array<float,6>linesWorld{};
+    if(!lines||!read(vm,lines,words,sizeof(words))||!call(vm,WorldMatrix,{lines},&pointer)||!read(vm,pointer,linesWorld.data(),24))
+        return !GuestHasStopRequest(vm);
+    for(std::uint32_t list:words){
+        if(list<0x1000||list&3)continue;
+        std::uint32_t entries[64]{};if(!read(vm,list,entries,sizeof(entries)))continue;
+        for(std::uint32_t child:entries){
+            std::uint32_t vt=0,matrixAt=0;float m6[6]{};std::uint8_t visible=0;
+            if(child<0x1000||child&3||child>UINT32_MAX-0x9bu||!word(vm,child,vt)||vt!=ShapeVtable||
+               !word(vm,child+0x4c,matrixAt)||!read(vm,matrixAt,m6,24)||!read(vm,child+0x9bu,&visible,1))continue;
+            if(m6[0]!=1||m6[1]!=0||m6[2]!=0||m6[3]!=0||m6[4]!=1||m6[5]!=0||!visible)continue;
+            std::array<float,6>world{};
+            if(!call(vm,WorldMatrix,{child},&pointer)||!read(vm,pointer,world.data(),24))return false;
+            if(world!=linesWorld)continue;
+            const std::uint8_t hidden=0;
+            if(!GuestWrite(vm,child+0x9bu,&hidden,1))return false;
+            char line[128];std::snprintf(line,sizeof(line),"[race-result] parked bar hidden=%#x",child);GuestRawLog(line);
+        }
+    }
+    return !GuestHasStopRequest(vm);
+}
 bool applyRaceResult(GuestVM *vm,State &s,Movie &m) {
     float stage[4]{};
     if(!read(vm,m.definition+0xb4,stage,sizeof(stage)))return false;
@@ -1029,6 +1058,7 @@ bool applyRaceResult(GuestVM *vm,State &s,Movie &m) {
     if(!applyNodeStageAffine(vm,s,m,m.resultRoot,centre,applied,changed))return false;
     for(auto &n:m.resultBackdrops)if(!applyNodeStageAffine(vm,s,m,n,widen,applied,changed))return false;
     if(!placeCornerButtons(vm,s,m))return false;
+    if(!hideParkedResultBar(vm,s,m))return false;
     // Edge controls: undo the root's scale, then theirs about their edge.
     for(auto &control:m.anchoredControls)
         if(!applyNodeStageAffine(vm,s,m,control.node,multiply(anchoredAffine(control,stage,k),widen),applied,changed))return false;
