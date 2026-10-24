@@ -72,6 +72,7 @@ static uint32_t finish(uint64_t bits, uint32_t fpscr, const float_status *status
 #if defined(__aarch64__) && !defined(AS6_NO_FAST_NEON)
 #pragma clang fp contract(off)
 #define AS6_FAST_FP 1
+#include <arm_neon.h>
 enum { FAST_ADD, FAST_SUB, FAST_MUL, FAST_DIV };
 
 static inline float as_float(uint32_t x) { float f; memcpy(&f, &x, 4); return f; }
@@ -179,12 +180,42 @@ static inline bool fast_lane64(int op, uint64_t a, uint64_t b, bool need_inexact
     *inexact = error != 0.0; return true;
 }
 
+/* fast_lane on both lanes at once, for FAST_ADD, FAST_SUB and FAST_MUL:
+ * the same operand and result tests and the same rounding errors, in
+ * vector registers. The errors are computed whatever need_inexact is; they
+ * are exact, so they are zero exactly when the lane was exact. */
 static inline bool fast_neon(int op, uint64_t a, uint64_t b, uint32_t fpscr, as6_fp_result *out) {
-    uint32_t lo, hi; bool lo_inexact, hi_inexact;
-    const bool need_inexact = !(fpscr & 16u);
-    if (!fast_lane(op, (uint32_t)a, (uint32_t)b, need_inexact, &lo, &lo_inexact) ||
-        !fast_lane(op, (uint32_t)(a >> 32), (uint32_t)(b >> 32), need_inexact, &hi, &hi_inexact)) return false;
-    fast_done(out, (uint64_t)lo | ((uint64_t)hi << 32), fpscr, lo_inexact || hi_inexact);
+    const uint32x2_t ua = vcreate_u32(a), ub = vcreate_u32(b);
+    const uint32x2_t magnitude = vdup_n_u32(0x7fffffffu), exponent_mask = vdup_n_u32(0xffu);
+    const uint32x2_t ea = vand_u32(vshr_n_u32(ua, 23), exponent_mask), eb = vand_u32(vshr_n_u32(ub, 23), exponent_mask);
+    const uint32x2_t za = vceq_u32(vand_u32(ua, magnitude), vdup_n_u32(0));
+    const uint32x2_t zb = vceq_u32(vand_u32(ub, magnitude), vdup_n_u32(0));
+    /* Normal or zero (fast_operand). */
+    uint32x2_t ok = vand_u32(vorr_u32(vand_u32(vtst_u32(ea, ea), vmvn_u32(vceq_u32(ea, exponent_mask))), za),
+                             vorr_u32(vand_u32(vtst_u32(eb, eb), vmvn_u32(vceq_u32(eb, exponent_mask))), zb));
+    const float32x2_t x = vreinterpret_f32_u32(ua);
+    const float32x2_t y = vreinterpret_f32_u32(op == FAST_SUB ? veor_u32(ub, vdup_n_u32(0x80000000u)) : ub);
+    float32x2_t r, error;
+    if (op == FAST_MUL) {
+        r = vmul_f32(x, y);
+        error = vfma_f32(vneg_f32(r), x, y);
+    } else {
+        r = vadd_f32(x, y);
+        const float32x2_t bv = vsub_f32(r, x), av = vsub_f32(r, bv);
+        error = vadd_f32(vsub_f32(x, av), vsub_f32(y, bv));
+    }
+    const uint32x2_t bits = vreinterpret_u32_f32(r);
+    const uint32x2_t er = vand_u32(vshr_n_u32(bits, 23), exponent_mask);
+    const uint32x2_t zr = vceq_u32(vand_u32(bits, magnitude), vdup_n_u32(0));
+    /* Not overflowed; nonzero results clear of tininess (exponent >= 64);
+     * a zero result is exact, except a product of nonzero values. */
+    uint32x2_t result_ok = vorr_u32(vcge_u32(er, vdup_n_u32(64)), zr);
+    result_ok = vand_u32(result_ok, vmvn_u32(vceq_u32(er, exponent_mask)));
+    if (op == FAST_MUL) result_ok = vand_u32(result_ok, vmvn_u32(vand_u32(zr, vmvn_u32(vorr_u32(za, zb)))));
+    ok = vand_u32(ok, result_ok);
+    if (vminv_u32(ok) == 0) return false;
+    const bool inexact = !(fpscr & 16u) && vmaxv_u32(vmvn_u32(vceqz_f32(error))) != 0;
+    fast_done(out, vget_lane_u64(vreinterpret_u64_u32(bits), 0), fpscr, inexact);
     return true;
 }
 /* d + sign_p * (n * m), the product rounded first; d negated first when

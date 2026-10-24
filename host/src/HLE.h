@@ -88,7 +88,9 @@ NSArray<NSString *> *HLEMissingSymbols(void);
 #endif
 
 // Define a host implementation and bind it to an original import name.
-#define HLE_DEFINE(fn) static void fn(GuestVM *vm)
+// GuestEmulate's HostExecutionFrame keeps the VM alive across every import,
+// so the implementation takes it unretained.
+#define HLE_DEFINE(fn) __attribute__((objc_externally_retained)) static void fn(GuestVM *vm)
 #define HLE_CAT2(a, b) a##b
 #define HLE_CAT(a, b) HLE_CAT2(a, b)
 #define HLE_BIND(sym, fn)                                                       \

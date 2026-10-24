@@ -18,11 +18,23 @@ the compiler. This rewrite emits, next to the unchanged original (renamed
   instruction, so stop/mode/budget results are the original ones.
 * An exit inside a block refunds the budget of its unexecuted instructions,
   a constant per exit site, so ctx.budget is exact on every exit.
-* ARM registers live in a local copy only within one block: a leader loads
-  the bytes its block reads or writes, and every edge leaving the block (to
-  another block or to an exit) writes back the bytes the block can write.
-  Between blocks the state is in ctx.registers, so no value stays live across
-  the whole function. pc, budget and mode stay in locals until the exit.
+* Blocks joined by an in-module goto form a region (a call or return always
+  exits, so a region is the code of one function between calls). ARM
+  registers live in a local copy while control stays in one region: entering
+  the fast function loads the bytes the region reads or writes, gotos inside
+  it touch no memory, and every exit from it (a return, a status, a failed
+  leader check) first writes back the bytes the region can write. Nothing
+  else reads ctx.registers meanwhile: the helpers that take ctx use only its
+  memory, status and fault fields, and DataAccess callbacks receive no
+  Context. pc, budget and mode stay in locals until the exit.
+* The translator's temporary flag bytes (tmpNG, tmpZR, tmpCY, tmpOV and
+  shift_carry, offsets 100..104) are private to one instruction: every
+  instruction that reads one defines it first (no read-before-def in the
+  whole program), and nothing outside the translated code reads them (CPSR
+  is rebuilt from the architectural flags). The fast function keeps them
+  only in its local copy: never loaded at a leader nor written back, so the
+  compiler drops the computations no instruction reads. Their bytes in
+  ctx.registers are left as they were.
 * `if (ctx.status != Returned) return ctx.status;` remains only after helpers
   that take ctx or after a status write: nothing else changes status, and the
   fast function is entered with status == Returned (else: exact function).
@@ -67,6 +79,8 @@ THUMB_WRITE = re.compile(r'\bctx\.isa_thumb\s*=(?!=)')
 RESERVED = re.compile(r'(?<!ctx\.)\b(next_pc|budget|isa_thumb|regs|as6_\w*exit\w*|entry_ins_\w+)\b')
 RETURN = re.compile(r'\breturn ([^;]+);')
 ALLOWED_CTX = {'registers', 'next_pc', 'budget', 'isa_thumb', 'status'}
+# tmpNG, tmpZR, tmpCY, tmpOV, shift_carry: private to one instruction.
+PRIVATE_FLAGS = range(100, 105)
 # An instruction's comment names a direct branch target: `b 0x...`, `bne 0x...`.
 HOOK = re.compile(r'^    if ?\((!legacy && )?as6_\w+_boundary::(tryDirect|shouldSuspend)\(ctx(, ?\w+)*\)\) return \w+;$')
 DIRECT_BRANCH = re.compile(r'^ins_[0-9a-f]+: // (?!bic)b\w*\s+0x([0-9a-f]+)\s*$', re.M)
@@ -193,14 +207,38 @@ def promote(source, entries=frozenset()):
                 offset, width = int(offset), int(width)
                 if offset + width > REGISTER_FILE_SIZE:
                     raise Refused('register access outside layout')
+                private = [offset + i in PRIVATE_FLAGS for i in range(width)]
+                if all(private):
+                    continue
+                if any(private):
+                    raise Refused('temporary flag byte accessed with other state')
                 accessed.append((offset, width))
                 if kind == 'write':
                     written.append((offset, width))
         block_sets[a] = (intervals(accessed), intervals(written))
-    leader_labels = {instructions[i]['label'] for i in leaders}
+    # Blocks joined by a goto form one region; its registers stay local from
+    # the region's entry to its exit.
+    parent = {a: a for a in bounds[:-1]}
+
+    def find(a):
+        while parent[a] != a:
+            parent[a] = parent[parent[a]]
+            a = parent[a]
+        return a
+    for a, b in zip(bounds, bounds[1:]):
+        for ins in instructions[a:b]:
+            for target in re.findall(r'goto (ins_[0-9a-f]+)', '\n'.join(ins['lines'])):
+                parent[find(block_of[order[target]][0])] = find(a)
+    regions = {}
+    for a in bounds[:-1]:
+        regions.setdefault(find(a), []).append(a)
+    region_sets = {r: (intervals((x, y - x) for a in blocks for x, y in block_sets[a][0]),
+                       intervals((x, y - x) for a in blocks for x, y in block_sets[a][1]))
+                   for r, blocks in regions.items()}
 
     def flush(a):
-        return ' '.join('std::memcpy(ctx.registers + %d, regs + %d, %d);' % (x, x, y - x) for x, y in block_sets[a][1])
+        return ' '.join('std::memcpy(ctx.registers + %d, regs + %d, %d);' % (x, x, y - x)
+                        for x, y in region_sets[find(a)][1])
 
     def localize(line):
         line = REGISTER_ACCESS.sub(lambda m: '%s_bytes(regs, %s, %s' % m.groups(), line)
@@ -211,23 +249,30 @@ def promote(source, entries=frozenset()):
     def exits(line, refund, block):
         add = ' budget += %d;' % refund if refund else ''
         line = RETURN.sub(lambda m: '{ as6_exit_status = %s;%s goto as6_exit_%d; }' % (m.group(1), add, block), line)
-        # Leaving the block for another leader publishes this block's writes.
-        return re.sub(r'goto (ins_[0-9a-f]+);', lambda m: ('{ %s goto %s; }' % (flush(block), m.group(1))
-                      if m.group(1) in leader_labels else m.group(0)), line)
+        return line
 
     fast = [f'static Status {name}(Context &ctx, bool legacy, std::uint32_t stop_pc, bool stop_thumb) {{']
     fast += preamble.rstrip('\n').split('\n')
     fast += ['    // Block-structured fast path; anything it cannot prove runs exactly.',
              '    if (ctx.status != Returned || ctx.isa_thumb) return %s_exact(ctx, legacy, stop_pc, stop_thumb);' % name,
              '    std::uint8_t regs[%d];' % REGISTER_FILE_SIZE,
+             '    std::memset(regs + %d, 0, %d); // temporary flags: defined before use' % (PRIVATE_FLAGS.start, len(PRIVATE_FLAGS)),
              '    std::uint32_t next_pc = ctx.next_pc;',
              '    std::uint64_t budget = ctx.budget;',
              '    bool isa_thumb = false;',
              '    Status as6_exit_status;',
              '    switch (next_pc) {']
-    fast += ['        case 0x%xu: goto %s;' % (instructions[i]['pc'], instructions[i]['label'])
-             for i in sorted(leaders)]
+    fast += ['        case 0x%xu: goto as6_region_%d;' % (instructions[i]['pc'], find(i)) for i in sorted(leaders)]
     fast += ['        default: return %s_exact(ctx, legacy, stop_pc, stop_thumb);' % name, '    }']
+    for r, blocks in sorted(regions.items()):
+        fast.append('as6_region_%d:' % r)
+        fast += ['    std::memcpy(regs + %d, ctx.registers + %d, %d);' % (x, x, y - x) for x, y in region_sets[r][0]]
+        if len(blocks) == 1:
+            fast.append('    goto %s;' % instructions[r]['label'])
+            continue
+        fast.append('    switch (next_pc) {')
+        fast += ['        case 0x%xu: goto %s;' % (instructions[a]['pc'], instructions[a]['label']) for a in blocks]
+        fast += ['        default: __builtin_unreachable();', '    }']
     for i, ins in enumerate(instructions):
         a, b = block_of[i]
         position, length = i - a, b - a
@@ -238,13 +283,14 @@ def promote(source, entries=frozenset()):
             last_pc = instructions[b - 1]['pc']
             fast.append('    if (isa_thumb || budget < %d || (!legacy && !stop_thumb && stop_pc >= 0x%xu && stop_pc <= 0x%xu))'
                         % (length, ins['pc'], last_pc))
-            fast.append('        { as6_exit_status = %s; goto as6_exit; }' % SLOW)
+            fast.append('        { as6_exit_status = %s; goto as6_exit_%d; }' % (SLOW, a))
             if ins['hook']:
+                # The hook reads ctx: publish the region's registers first.
+                fast.append('    ' + flush(a))
                 fast.append('    ctx.next_pc = 0x%xu; write_bytes(ctx.registers, 92, 4, Word(ctx.next_pc));' % ins['pc'])
                 fast.append('    ctx.isa_thumb = false; ctx.budget = budget;')
                 fast.append(ins['hook'])
             fast.append('    budget -= %d;' % length)
-            fast += ['    std::memcpy(regs + %d, ctx.registers + %d, %d);' % (x, x, y - x) for x, y in block_sets[a][0]]
         refund = length - position - 1
         for line in prune_status_checks(ins['lines']):
             fast.append(exits(localize(line), refund, a))

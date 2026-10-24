@@ -84,9 +84,14 @@ struct Outcome {
     bool thumb;
     std::uint8_t registers[1024];
     std::vector<std::uint64_t> trace;
+    // The translator's temporary flag bytes (100..104) are private to one
+    // instruction: no instruction reads one it did not define, and nothing
+    // outside the translated code reads them. The promoted copy keeps them
+    // local, so only their final bytes in the register file may differ.
     bool operator==(const Outcome &o) const {
         return status == o.status && next_pc == o.next_pc && fault == o.fault && budget == o.budget &&
-               thumb == o.thumb && !std::memcmp(registers, o.registers, sizeof(registers)) && trace == o.trace;
+               thumb == o.thumb && !std::memcmp(registers, o.registers, 100) &&
+               !std::memcmp(registers + 105, o.registers + 105, sizeof(registers) - 105) && trace == o.trace;
     }
 };
 

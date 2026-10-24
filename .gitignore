@@ -24,3 +24,6 @@ __pycache__/
 *.mobileprovision
 *.p12
 capture/
+
+# Performance study evidence (traces, prototypes, results): kept locally, too large for git.
+/perf-evidence/

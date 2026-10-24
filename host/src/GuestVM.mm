@@ -160,6 +160,10 @@ struct GameWriteWatch {
     GameWriteWatch _gameWriteWatch;
     std::unique_ptr<as6native::ObjCEmptyVtableIdentity> _objcMetadata;
     NSRecursiveLock *_lock;
+    // The thread whose lockDepth entry for this VM is non-zero, else null.
+    // Only the lock holder writes it, so a thread reads its own id here
+    // exactly while it holds the lock.
+    std::atomic<pthread_t> _lockOwner;
     NSMutableArray<NSString *> *_trace;
     std::atomic<bool> _fault, _halt;
     GuestExecutionResult _lastResult;
@@ -208,10 +212,7 @@ struct GameWriteWatch {
 
 // Private diagnostics borrow the current owner; they never select a CPU.
 static bool DiagnosticLockHeld(__unsafe_unretained GuestVM *vm) {
-    if (!vm) return false;
-    const auto key=reinterpret_cast<std::uintptr_t>((__bridge void *)vm);
-    const auto found=lockDepth.find(key);
-    return found!=lockDepth.end() && found->second;
+    return vm && vm->_lockOwner.load(std::memory_order_relaxed)==pthread_self();
 }
 extern "C" BOOL GuestDiagnosticSnapshotLockHeld(GuestVM *vm) { return DiagnosticLockHeld(vm) && !vm->_nativeDepth; }
 
@@ -460,7 +461,7 @@ static bool SetError(NSError **out,GuestExecutionResult code,NSString *descripti
         userInfo:@{NSLocalizedDescriptionKey:description}];
     return false;
 }
-extern "C" as6aot::NativeState *GuestNativeCPUState(GuestVM *vm) {
+extern "C" __attribute__((objc_externally_retained)) as6aot::NativeState *GuestNativeCPUState(GuestVM *vm) {
     // Existing private seam contract: only return live state under this VM lock.
     return DiagnosticLockHeld(vm) && vm->_core ? &vm->_core->state() : nullptr;
 }
@@ -698,6 +699,9 @@ static BOOL RejectObjCMetadataMemory(GuestVM *vm) {
     if(vm){GuestLock(vm);@try{vm->_fault=true;vm->_lastResult=GuestExecutionMemoryFault;}@finally{GuestUnlock(vm);}}
     return NO;
 }
+// Hot accessors: every caller passes a VM it keeps alive, so the parameter
+// needs no retain/release of its own.
+#pragma clang attribute push(__attribute__((objc_externally_retained)), apply_to=function)
 BOOL GuestRead(GuestVM *vm,gva_t at,void *out,size_t size) {
     if(as6native::ObjCMetadataOverlap(at,size))return RejectObjCMetadataMemory(vm);
     return vm && vm->_core && out && size && Core::range(at,size) && vm->_core->read(at,out,size);
@@ -749,6 +753,7 @@ void GuestWriteU32(GuestVM *vm,gva_t at,uint32_t value) {
         vm->_fault=true; vm->_lastResult=GuestExecutionMemoryFault;
     }
 }
+#pragma clang attribute pop
 size_t GuestStrLen(GuestVM *vm,gva_t at,size_t cap) {
     if (!vm || !at) return 0;
     cap=std::min<std::uint64_t>(cap,0x100000000ULL-at);
@@ -797,6 +802,7 @@ size_t GuestStrCopy(GuestVM *vm,gva_t dst,gva_t src,size_t cap) {
     } catch (const std::bad_alloc &) { return size_t(-1); }
 }
 
+#pragma clang attribute push(__attribute__((objc_externally_retained)), apply_to=function)
 uint32_t GuestReg(GuestVM *vm,int index) {
     auto *state=GuestNativeCPUState(vm); uint32_t value=0;
     if (state&&index>=0) state->get_register(unsigned(index),value);
@@ -849,6 +855,7 @@ void GuestSetRet(GuestVM *vm,uint32_t value) { GuestSetReg(vm,0,value); }
 void GuestSetRetF(GuestVM *vm,float value) { uint32_t bits; std::memcpy(&bits,&value,4); GuestSetRet(vm,bits); }
 void GuestSetRetD(GuestVM *vm,double value) { uint64_t bits; std::memcpy(&bits,&value,8); GuestSetReg(vm,0,uint32_t(bits)); GuestSetReg(vm,1,uint32_t(bits>>32)); }
 void GuestReturn(GuestVM *vm) { GuestSetPC(vm,GuestLR(vm)); }
+#pragma clang attribute pop
 
 static std::uintptr_t Key(GuestVM *vm) { return reinterpret_cast<std::uintptr_t>((__bridge void *)vm); }
 // Guest threads keep the VM lock while they run and give it up only in
@@ -865,17 +872,17 @@ void GuestLock(GuestVM *vm) {
         mainLockWaiters.fetch_sub(1,std::memory_order_relaxed);
         mainLockAcquisitions.fetch_add(1,std::memory_order_release);
     } else [vm->_lock lock];
-    ++lockDepth[Key(vm)]; HLEPthreadTakeCPU(vm);
+    ++lockDepth[Key(vm)]; vm->_lockOwner.store(pthread_self(),std::memory_order_relaxed); HLEPthreadTakeCPU(vm);
 }
 BOOL GuestTryLock(GuestVM *vm) {
     if (!vm||![vm->_lock tryLock]) return NO;
-    ++lockDepth[Key(vm)]; HLEPthreadTakeCPU(vm); return YES;
+    ++lockDepth[Key(vm)]; vm->_lockOwner.store(pthread_self(),std::memory_order_relaxed); HLEPthreadTakeCPU(vm); return YES;
 }
 void GuestUnlock(GuestVM *vm) {
     if (!vm) return;
     auto found=lockDepth.find(Key(vm));
     if (found==lockDepth.end()||!found->second) { GuestRequestFault(vm); return; }
-    if (!--found->second) lockDepth.erase(found);
+    if (!--found->second) { lockDepth.erase(found); vm->_lockOwner.store(nullptr,std::memory_order_relaxed); }
     [vm->_lock unlock];
 }
 NSUInteger GuestSuspendLocks(GuestVM *vm) {
@@ -932,7 +939,7 @@ extern "C" void GuestSchedulerResumeLocks(GuestVM *vm,size_t depth) {
     if(!vm)return;
     // Reacquire the exact recursive lock levels before checking the captured
     // CPU owner. GuestLock would automatically switch/create a schedule first.
-    for(size_t i=0;i<depth;++i){[vm->_lock lock];++lockDepth[Key(vm)];}
+    for(size_t i=0;i<depth;++i){[vm->_lock lock];++lockDepth[Key(vm)];vm->_lockOwner.store(pthread_self(),std::memory_order_relaxed);}
 }
 
 void GuestRegisterStack(GuestVM *vm,gva_t base,uint32_t size) {
@@ -964,6 +971,9 @@ static void CaptureNativeFailure(GuestVM *vm,as6aot::Status result) {
         @"thumb":@(ctx.isa_thumb),@"fault_address":@(ctx.fault_address),
         @"remaining_budget":@(ctx.budget),@"cpsr":@(state.cpsr()),@"registers":registers};
 }
+// The VM stays alive through every caller's HostExecutionFrame (a strong
+// reference), so these per-import steps take it unretained.
+#pragma clang attribute push(__attribute__((objc_externally_retained)), apply_to=function)
 static GuestExecutionResult Finish(GuestVM *vm,GuestExecutionResult result) {
     if(activeHostFrame&&activeHostFrame->vm==vm)activeHostFrame->finished=true;
     // Invalid/unlocked API calls never dereference Core for Nav cleanup.
@@ -1015,6 +1025,7 @@ static void MainThreadSchedulingBoundary(GuestVM *vm) {
     },&seen);
     errno=savedErrno;
 }
+#pragma clang attribute pop
 // AS6_DIRECT_MEMORY=0 keeps every native load/store on the DataAccess
 // callback, for comparing against the direct page view in one build.
 static bool DirectMemoryEnabled() {
@@ -1024,7 +1035,7 @@ static bool DirectMemoryEnabled() {
     }();
     return enabled;
 }
-GuestExecutionResult GuestEmulate(GuestVM *vm,gva_t begin,gva_t until,uint64_t maxInsns) {
+__attribute__((objc_externally_retained)) GuestExecutionResult GuestEmulate(GuestVM *vm,gva_t begin,gva_t until,uint64_t maxInsns) {
     if (!vm) return GuestExecutionUnavailable;
     // Caller-must-lock API: never inspect the unique Core or invoke Finish
     // from an unlocked caller racing GuestVMDestroy.

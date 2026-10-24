@@ -817,6 +817,9 @@ HLE_DEFINE(hle_error) {
 HLE_BIND("___error", hle_error)
 
 // --- string / memory -------------------------------------------------------
+// These helpers run for every guest memcpy/strlen/math call; the VM they
+// receive is kept alive by the HLE dispatcher, so no parameter is retained.
+#pragma clang attribute push(__attribute__((objc_externally_retained)), apply_to=function)
 
 // C strings are byte sequences. Keep accesses inside mapped guest pages so a
 // terminator at the end of a page never causes a speculative read past it.
@@ -1350,6 +1353,8 @@ HLE_DEFINE(hle_div) {
     GuestSetRet(vm, out);
 }
 HLE_BIND("_div", hle_div)
+
+#pragma clang attribute pop
 
 // --- time ------------------------------------------------------------------
 
