@@ -864,14 +864,20 @@ static std::uintptr_t Key(GuestVM *vm) { return reinterpret_cast<std::uintptr_t>
 // MainThreadSchedulingBoundary), keeping frames and input inside the watchdog.
 static std::atomic<unsigned> mainLockWaiters{0};
 static std::atomic<uint64_t> mainLockAcquisitions{0};
+
+// Every main-thread acquisition announces itself, including the reacquire
+// after a scheduler handoff: a guest thread that holds the lock while waiting
+// for the main thread yields only to an announced waiter.
+static void LockVM(GuestVM *vm) {
+    if (!pthread_main_np()) { [vm->_lock lock]; return; }
+    mainLockWaiters.fetch_add(1,std::memory_order_relaxed);
+    [vm->_lock lock];
+    mainLockWaiters.fetch_sub(1,std::memory_order_relaxed);
+    mainLockAcquisitions.fetch_add(1,std::memory_order_release);
+}
 void GuestLock(GuestVM *vm) {
     if (!vm) return;
-    if (pthread_main_np()) {
-        mainLockWaiters.fetch_add(1,std::memory_order_relaxed);
-        [vm->_lock lock];
-        mainLockWaiters.fetch_sub(1,std::memory_order_relaxed);
-        mainLockAcquisitions.fetch_add(1,std::memory_order_release);
-    } else [vm->_lock lock];
+    LockVM(vm);
     ++lockDepth[Key(vm)]; vm->_lockOwner.store(pthread_self(),std::memory_order_relaxed); HLEPthreadTakeCPU(vm);
 }
 BOOL GuestTryLock(GuestVM *vm) {
@@ -939,7 +945,7 @@ extern "C" void GuestSchedulerResumeLocks(GuestVM *vm,size_t depth) {
     if(!vm)return;
     // Reacquire the exact recursive lock levels before checking the captured
     // CPU owner. GuestLock would automatically switch/create a schedule first.
-    for(size_t i=0;i<depth;++i){[vm->_lock lock];++lockDepth[Key(vm)];vm->_lockOwner.store(pthread_self(),std::memory_order_relaxed);}
+    for(size_t i=0;i<depth;++i){LockVM(vm);++lockDepth[Key(vm)];vm->_lockOwner.store(pthread_self(),std::memory_order_relaxed);}
 }
 
 void GuestRegisterStack(GuestVM *vm,gva_t base,uint32_t size) {
