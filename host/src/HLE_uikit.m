@@ -335,9 +335,18 @@ BOOL GuestWindowAddSubview(GuestVM *vm, id window, gva_t guestSubview) {
 @class PortFrameDriver;
 static __weak GuestVM *g_uikitOwnerVM;
 static PortFrameDriver *g_frameDriver;
+static id g_renderPowerStateObserver;
 static BOOL g_renderPaused=NO,g_renderRunning=NO,g_lifecycleRunning=NO,g_lifecycleReady=NO;
 enum NativeApplicationPhase { NativeBooting,NativeActive,NativeInactive,NativeBackground,NativeForeground };
 static NativeApplicationPhase g_applicationPhase=NativeBooting;
+
+static float NativeRenderFrameRate(void) {
+    return NSProcessInfo.processInfo.lowPowerModeEnabled?30.f:60.f;
+}
+static void ConfigureNativeRenderFrameRate(CADisplayLink *link) {
+    const float rate=NativeRenderFrameRate();
+    link.preferredFrameRateRange=CAFrameRateRangeMake(rate,rate,rate);
+}
 
 static BOOL NativeCallbackCandidate(GuestVM *vm) {
     return NSThread.isMainThread&&vm&&vm==g_uikitOwnerVM&&!GuestHasStopRequest(vm);
@@ -478,7 +487,7 @@ static NSTimer *CreateNativeGuestTimer(GuestVM *vm,NSTimeInterval interval,BOOL 
     driver->_vm=vm;driver->_timer=timer;
     PortRenderTimerTickProxy *proxy=[PortRenderTimerTickProxy new];proxy->_owner=driver;
     CADisplayLink *link=[CADisplayLink displayLinkWithTarget:proxy selector:@selector(tick)];
-    link.preferredFrameRateRange=CAFrameRateRangeMake(60,60,60);
+    ConfigureNativeRenderFrameRate(link);
     link.paused=g_renderPaused;driver->_link=link;
     // GuestObjCWrap retains the timer. The association owns the driver, whose
     // timer reference is weak; releasing the timer invalidates its link too.
@@ -488,18 +497,37 @@ static NSTimer *CreateNativeGuestTimer(GuestVM *vm,NSTimeInterval interval,BOOL 
 }
 // END AS6_ORIGINAL_RENDER_TIMER_LINK
 
+static void RefreshNativeRenderFrameRates(void) {
+    // Power-state notifications are delivered on the main operation queue,
+    // alongside timer creation/invalidation. Changing cadence never unpauses.
+    if(g_frameDriver)ConfigureNativeRenderFrameRate(g_frameDriver->_link);
+    for(NSTimer *timer in g_renderTimers) {
+        PortRenderTimerLink *driver=NativeRenderTimerLink(timer);
+        if(driver)ConfigureNativeRenderFrameRate(driver->_link);
+    }
+}
 static void PauseNativeRender(BOOL paused) {
+    if(!paused)RefreshNativeRenderFrameRates();
     g_renderPaused=paused;[g_frameDriver setPaused:paused];
     for(NSTimer *timer in g_renderTimers)[NativeRenderTimerLink(timer) setPaused:paused];
 }
 static void BindNativeRenderOwner(GuestVM *vm) {
     if(g_uikitOwnerVM==vm)return;
+    if(g_renderPowerStateObserver) {
+        [NSNotificationCenter.defaultCenter removeObserver:g_renderPowerStateObserver];
+        g_renderPowerStateObserver=nil;
+    }
     [g_frameDriver invalidate];g_frameDriver=nil;
     for(NSTimer *timer in g_renderTimers)InvalidateNativeRenderTimer(timer);
     g_renderTimers=nil;g_guestTimerActive=NO;
     g_uiHostMetricsValid=NO;g_uiHostMetricsView=nil;
     g_uikitOwnerVM=vm;g_renderPaused=NO;g_renderRunning=NO;g_lifecycleRunning=NO;
     g_lifecycleReady=NO;g_applicationPhase=NativeBooting;
+    if(vm)g_renderPowerStateObserver=[NSNotificationCenter.defaultCenter
+        addObserverForName:NSProcessInfoPowerStateDidChangeNotification object:nil
+        queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *) {
+            RefreshNativeRenderFrameRates();
+        }];
 }
 
 // Private C seam for SceneDelegate. It admits only the four original methods.
@@ -549,10 +577,10 @@ void GuestStartFrameDriver(void) {
         [g_frameDriver invalidate];
         g_frameDriver=[PortFrameDriver new];g_frameDriver->_vm=vm;g_frameDriver->_view=g_glView;
         CADisplayLink *link=[CADisplayLink displayLinkWithTarget:g_frameDriver selector:@selector(tick)];
-        link.preferredFrameRateRange=CAFrameRateRangeMake(60,60,60);
+        ConfigureNativeRenderFrameRate(link);
         link.paused=g_renderPaused;g_frameDriver->_link=link;
         [link addToRunLoop:NSRunLoop.mainRunLoop forMode:NSRunLoopCommonModes];
-        GuestTrace(vm,@"[uikit] native fallback drawView driver requested 60Hz");
+        GuestTrace(vm,@"[uikit] native fallback drawView driver requested %.0fHz",NativeRenderFrameRate());
     } @finally {GuestUnlock(vm);}
 }
 // END AS6_NATIVE_CADENCE_LIFECYCLE
@@ -612,8 +640,8 @@ BOOL GuestTimerOverride(GuestVM *vm, id target, SEL sel) {
         [g_renderTimers addObject:timer];
         g_guestTimerActive = YES;
         if(NativeRenderTimerLink(timer))
-            GuestTrace(vm,@"[uikit] original render NSTimer %#x -> -[%@] display-link=60Hz modes=common requested=%.6fs",
-                       target0,name,interval);
+            GuestTrace(vm,@"[uikit] original render NSTimer %#x -> -[%@] display-link=%.0fHz modes=common requested=%.6fs",
+                       target0,name,NativeRenderFrameRate(),interval);
     }
     GuestSetRet(vm, GuestObjCWrap(vm, timer));
     return YES;

@@ -9,6 +9,7 @@ This repository contains only the compatibility layer code. It does not include 
 ## Features
 
 - Runs the original *Asphalt 6* 1.3.2 on arm64 iPhones; on an iPhone 17 Pro races average about 58–60 fps (around 50 when the phone heats up and throttles)
+- Targets 30 fps in Low Power Mode and returns to 60 fps when it is disabled, including changes made while the game is running
 - Adapted only for 16:9 and full-screen (about 2.2:1) iPhones, such as the iPhone 17 Pro: the interface is not stretched and the 3D view is shown 1:1 at the screen's real aspect (the 3D part needs the HD background pack). Other screens (such as iPad) get no adaptation; the 3:2 image is simply stretched to fill the screen
 - Multiplayer Bluetooth (unsupported) and online entries are disabled; store services are removed; the iPod music library entry is removed (the game's own music still plays)
 - Optional HD background pack (16:9 and full-screen 2.2:1). On these two screen types the 3D view is shown 1:1 only with the pack installed; without it the 3D view is stretched from 3:2 to fill the screen, while the interface is still adapted

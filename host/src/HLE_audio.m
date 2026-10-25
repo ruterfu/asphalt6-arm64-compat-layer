@@ -35,6 +35,24 @@ static std::atomic<uint64_t> g_audioCalls{0}, g_audioFrames{0}, g_audioBusy{0};
 static std::atomic<uint64_t> g_audioNonzeroBuffers{0};
 static std::atomic<uint64_t> g_audioErrors{0}, g_audioNanoseconds{0}, g_audioMaxNanoseconds{0}, g_audioOverruns{0};
 static std::atomic<uint64_t> g_audioProducerWaiting{0},g_audioProducedBlocks{0},g_audioUnderrunFrames{0},g_audioProducerErrors{0};
+static std::atomic<bool> g_audioLowPowerMode{false};
+
+static void EnsureAudioPowerNotifications(void) {
+    static dispatch_once_t once;
+    dispatch_once(&once,^{
+        // Process lifetime observer captures no VM or audio unit. Only the
+        // producer reads this flag; RemoteIO never queries Foundation.
+        static id observer;
+        observer=[[NSNotificationCenter defaultCenter]
+            addObserverForName:NSProcessInfoPowerStateDidChangeNotification object:nil
+            queue:nil usingBlock:^(NSNotification *) {
+                g_audioLowPowerMode.store(NSProcessInfo.processInfo.lowPowerModeEnabled,
+                                          std::memory_order_relaxed);
+            }];
+        g_audioLowPowerMode.store(NSProcessInfo.processInfo.lowPowerModeEnabled,
+                                  std::memory_order_relaxed);
+    });
+}
 static std::mutex g_audioTurnMutex;
 static std::condition_variable g_audioTurnChanged;
 static std::atomic<uint64_t> g_audioAcquisitionSerial{0};
@@ -91,6 +109,8 @@ struct GuestAudioUnit {
     as6audio::PcmRing ring;
     std::array<as6audio::Stereo16,as6audio::PcmRing::BlockFrames> producerPCM{};
     std::array<as6audio::Stereo16,4096> realtimePCM{};
+    std::atomic<UInt32> maximumRenderFrames{512}; // Largest observed RemoteIO callback.
+    static_assert(std::atomic<UInt32>::is_always_lock_free);
     std::atomic<bool> active{false},buffered{false},bufferedContract{false},retired{false},producerFailed{false};
     std::atomic<uint64_t> epoch{1};
     bool workerStarted=false; // Control/VM lock only.
@@ -269,9 +289,17 @@ static void *AudioProducerThread(void *opaque) {
     while(!state->retired.load(std::memory_order_acquire)){
         @autoreleasepool {
             if(GuestHasStopRequest(state->vm))break;
+            // Cover a whole hardware callback plus one partially consumed
+            // block. Low Power Mode uses the full ring (~85 ms at 48 kHz)
+            // to tolerate longer VM scheduling gaps after CPU downclocking.
+            const auto callbackBlocks=(state->maximumRenderFrames.load(std::memory_order_relaxed)+
+                as6audio::PcmRing::BlockFrames-1)/as6audio::PcmRing::BlockFrames;
+            const auto targetBlocks=g_audioLowPowerMode.load(std::memory_order_relaxed)?
+                as6audio::PcmRing::Capacity:std::min(as6audio::PcmRing::Capacity,
+                    std::max(size_t(3),callbackBlocks+1));
             if(!state->active.load(std::memory_order_acquire)||
                !state->buffered.load(std::memory_order_acquire)||
-               state->producerFailed.load(std::memory_order_acquire)||state->ring.queuedBlocks()>=3){
+               state->producerFailed.load(std::memory_order_acquire)||state->ring.queuedBlocks()>=targetBlocks){
                 const timespec pause={0,1000000};nanosleep(&pause,nullptr);continue;
             }
             // Kept set while blocking, so a main quantum can hand over the VM.
@@ -326,6 +354,7 @@ static void *AudioProducerThread(void *opaque) {
 
 static bool StartBufferedWorker(const std::shared_ptr<GuestAudioUnit> &state) {
     if(state->workerStarted)return true;
+    EnsureAudioPowerNotifications();
     if(!state->producerStack){
         state->producerStack=GuestAlloc(state->vm,1u<<18);
         if(!state->producerStack)return false;
@@ -335,7 +364,10 @@ static bool StartBufferedWorker(const std::shared_ptr<GuestAudioUnit> &state) {
     if(!owner)return false;
     pthread_attr_t attrs;
     if(pthread_attr_init(&attrs)){delete owner;return false;}
-    if(pthread_attr_setdetachstate(&attrs,PTHREAD_CREATE_DETACHED)){
+    // This worker supplies an audio deadline, even when the main game loop
+    // is throttled. Do not inherit a control caller's default/background QoS.
+    if(pthread_attr_setdetachstate(&attrs,PTHREAD_CREATE_DETACHED)||
+       pthread_attr_set_qos_class_np(&attrs,QOS_CLASS_USER_INTERACTIVE,0)){
         pthread_attr_destroy(&attrs);delete owner;return false;
     }
     pthread_t thread;
@@ -392,6 +424,10 @@ static OSStatus AudioBufferedRender(GuestAudioUnit &state,AudioUnitRenderActionF
     const size_t bytes=size_t(frames)*sizeof(as6audio::Stereo16);
     if(buffer.mData && buffer.mDataByteSize && buffer.mDataByteSize<bytes)
         return AudioBufferedError(flags,data,kAudioUnitErr_TooManyFramesToProcess);
+    // RemoteIO consumers are serialized. Retain the largest request so a
+    // shorter callback cannot shrink the producer budget before a longer one.
+    if(frames>state.maximumRenderFrames.load(std::memory_order_relaxed))
+        state.maximumRenderFrames.store(frames,std::memory_order_relaxed);
     auto *out=buffer.mData?static_cast<as6audio::Stereo16 *>(buffer.mData):state.realtimePCM.data();
     const auto copied=state.ring.consume(out,frames,state.epoch.load(std::memory_order_acquire));
     buffer.mData=out;buffer.mDataByteSize=UInt32(bytes);buffer.mNumberChannels=2;

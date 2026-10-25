@@ -65,8 +65,7 @@ struct Voice {
     std::shared_ptr<Completion> completion=std::make_shared<Completion>();
     std::uint64_t generation=0,epoch=0,sourceOrigin=0,scheduledFrames=0,pausedFrames=0,attackFrames=0;
     bool sourceLoops=false,scheduledLoop=false,paused=false,fading=false;
-    float volume=1,bakedGain=1;
-    std::uint64_t attackElapsedOrigin=0;
+    float volume=1;
     float fadeStartGain=1;
     void invalidate() { generation+=2; completion->ticket.store(generation,std::memory_order_release); }
     bool completed() const { return completion->ticket.load(std::memory_order_acquire)==(generation|1); }
@@ -173,37 +172,6 @@ struct ApplePcmOutput::Impl {
             engine.manualRenderingSampleTime*double(voice.clip->sampleRate)/renderFormat.sampleRate) atRate:voice.clip->sampleRate];
         startPlayer(voice.player,when);
     }
-    void rebuildGain(Voice &voice,float gain) {
-        if(gain==voice.bakedGain)return;
-        const bool wasPaused=voice.paused;
-        const auto elapsed=voice.played(),start=voice.positionAt(elapsed);
-        if(!wasPaused)[voice.player pause];
-        const auto attackOffset=voice.attackElapsedOrigin+elapsed;
-        const auto remainingAttack=voice.attackFrames>attackOffset?voice.attackFrames-attackOffset:0;
-        AVAudioPCMBuffer *buffer=nil,*prefix=nil;
-        float fadeStart=voice.fadeStartGain;
-        try {
-            if(voice.fading){
-                const auto remaining=voice.scheduledFrames-std::min(elapsed,voice.scheduledFrames);
-                if(!remaining){auto expected=voice.generation;voice.completion->ticket.compare_exchange_strong(expected,voice.generation|1);return;}
-                fadeStart*=voice.scheduledFrames>1?float(voice.scheduledFrames-1-std::min(elapsed,voice.scheduledFrames-1))/float(voice.scheduledFrames-1):0.f;
-                buffer=bufferFor(*voice.clip,start,AVAudioFrameCount(remaining),voice.sourceLoops,true,gain*fadeStart);
-            }else if(voice.sourceLoops){
-                buffer=bufferFor(*voice.clip,(start+remainingAttack)%voice.clip->frames,AVAudioFrameCount(voice.clip->frames),true,false,gain);
-                if(remainingAttack)prefix=bufferFor(*voice.clip,start,AVAudioFrameCount(remainingAttack),true,false,gain,voice.attackFrames,attackOffset);
-            }else{
-                const auto remaining=voice.clip->frames-start;
-                if(!remaining){auto expected=voice.generation;voice.completion->ticket.compare_exchange_strong(expected,voice.generation|1);return;}
-                buffer=bufferFor(*voice.clip,start,AVAudioFrameCount(remaining),false,false,gain,voice.attackFrames,attackOffset);
-            }
-        }catch(...){if(!wasPaused)startVoice(voice);throw;}
-        voice.invalidate();[voice.player stop];voice.player.volume=1;
-        voice.sourceOrigin=start;voice.pausedFrames=0;voice.attackElapsedOrigin=attackOffset;
-        voice.fadeStartGain=fadeStart;voice.bakedGain=gain;voice.attackBuffer=prefix;
-        if(prefix)[voice.player scheduleBuffer:prefix atTime:nil options:0 completionHandler:nil];
-        schedule(voice,buffer,!voice.fading&&voice.sourceLoops);
-        voice.paused=wasPaused;if(!wasPaused)startVoice(voice);
-    }
     unsigned retiringCount() const {
         return unsigned(std::count_if(voices.begin(),voices.end(),[](const auto &entry){return entry.second->fading;}));
     }
@@ -265,16 +233,16 @@ std::uint64_t ApplePcmOutput::playVoice(SharedPcmClip clip,bool loop,std::uint32
     return apple([&]()->std::uint64_t{
         impl_->collect();impl_->ensureEngine(*clip);
         auto voice=std::make_unique<Voice>();voice->clip=std::move(clip);voice->epoch=++impl_->nextEpoch;
-        voice->sourceLoops=loop;voice->volume=initialGain;voice->bakedGain=impl_->volume*initialGain;
+        voice->sourceLoops=loop;voice->volume=initialGain;
         if(!impl_->availablePlayers.count)throw std::length_error("Native PCM voice capacity exhausted");
         voice->attackFrames=(std::uint64_t(fadeInMs)*voice->clip->sampleRate+999)/1000;
         if(voice->attackFrames>std::numeric_limits<AVAudioFrameCount>::max())throw std::length_error("PCM fade-in is too long");
         AVAudioPCMBuffer *buffer=bufferFor(*voice->clip,loop&&voice->attackFrames?voice->attackFrames%voice->clip->frames:0,
-            AVAudioFrameCount(voice->clip->frames),loop&&voice->attackFrames,false,voice->bakedGain,loop?0:voice->attackFrames);
+            AVAudioFrameCount(voice->clip->frames),loop&&voice->attackFrames,false,1,loop?0:voice->attackFrames);
         voice->player=impl_->availablePlayers.lastObject;[impl_->availablePlayers removeLastObject];
-        voice->player.volume=1;
+        voice->player.volume=impl_->volume*initialGain;
         if(loop&&voice->attackFrames){
-            voice->attackBuffer=bufferFor(*voice->clip,0,AVAudioFrameCount(voice->attackFrames),true,false,voice->bakedGain,voice->attackFrames);
+            voice->attackBuffer=bufferFor(*voice->clip,0,AVAudioFrameCount(voice->attackFrames),true,false,1,voice->attackFrames);
             [voice->player scheduleBuffer:voice->attackBuffer atTime:nil options:0 completionHandler:nil];
         }
         schedule(*voice,buffer,loop);
@@ -306,10 +274,10 @@ bool ApplePcmOutput::stopVoice(std::uint64_t epoch,std::uint32_t fadeMs) {
         if(count>std::numeric_limits<AVAudioFrameCount>::max())throw std::length_error("PCM fade is too long");
         const float currentGain=voice.fading ? voice.fadeStartGain*(voice.scheduledFrames>1?
             float(voice.scheduledFrames-1-std::min(elapsed,voice.scheduledFrames-1))/float(voice.scheduledFrames-1):0.f)
-            : (voice.attackFrames?float(std::min(voice.attackElapsedOrigin+elapsed,voice.attackFrames))/float(voice.attackFrames):1.f);
-        AVAudioPCMBuffer *tail=bufferFor(*voice.clip,start,AVAudioFrameCount(count),voice.sourceLoops,true,currentGain*voice.bakedGain);
+            : (voice.attackFrames?float(std::min(elapsed,voice.attackFrames))/float(voice.attackFrames):1.f);
+        AVAudioPCMBuffer *tail=bufferFor(*voice.clip,start,AVAudioFrameCount(count),voice.sourceLoops,true,currentGain);
         voice.invalidate();[voice.player stop];voice.sourceOrigin=start;voice.fading=true;voice.pausedFrames=0;
-        voice.fadeStartGain=currentGain;voice.attackFrames=0;voice.attackElapsedOrigin=0;voice.attackBuffer=nil;
+        voice.fadeStartGain=currentGain;voice.attackFrames=0;voice.attackBuffer=nil;
         schedule(voice,tail,false);impl_->startVoice(voice);return true;
     });
 }
@@ -321,12 +289,14 @@ bool ApplePcmOutput::setVoiceVolume(std::uint64_t epoch,float volume) {
     impl_->requireOwner();
     if(!std::isfinite(volume)||volume<0||volume>1)throw std::invalid_argument("PCM voice volume must be in0..1");
     return apple([&]{impl_->collect();auto found=impl_->voices.find(epoch);if(found==impl_->voices.end())return false;
-        found->second->volume=volume;impl_->rebuildGain(*found->second,impl_->volume*volume);return true;});
+        // Node gain changes preserve the scheduled PCM, envelope and playback clock.
+        // Rebuilding a full music clip here paused playback during the copy.
+        found->second->volume=volume;found->second->player.volume=impl_->volume*volume;return true;});
 }
 void ApplePcmOutput::setVolume(float volume) {
     impl_->requireOwner();
     if(!std::isfinite(volume)||volume<0||volume>1)throw std::invalid_argument("PCM volume must be in0..1");
-    apple([&]{impl_->collect();impl_->volume=volume;for(auto &entry:impl_->voices)impl_->rebuildGain(*entry.second,volume*entry.second->volume);});
+    apple([&]{impl_->collect();impl_->volume=volume;for(auto &entry:impl_->voices)entry.second->player.volume=volume*entry.second->volume;});
 }
 void ApplePcmOutput::pause() {
     impl_->requireOwner();
